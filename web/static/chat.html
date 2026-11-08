@@ -411,7 +411,7 @@ body.drawer-open{overflow:hidden}
 .d-tag.warn{background:var(--warn-soft);color:var(--warn)}
 .d-tag.stop{background:var(--danger-soft);color:var(--danger)}
 
-.s2-detail-dialog{max-width:1040px}
+.s2-detail-dialog,.s3-detail-dialog{max-width:1040px}
 .s2-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
 .s2-stat{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted)}
 .s2-stat .k{font-size:11px;color:var(--muted)}
@@ -426,6 +426,7 @@ body.drawer-open{overflow:hidden}
 .s2-table tr:last-child td{border-bottom:0}
 .s2-table .quote{min-width:220px;white-space:normal}
 .s2-table .s2-source{min-width:110px;max-width:170px;overflow-wrap:anywhere}
+.s2-table .s3-code{font-family:var(--mono);font-size:11px}
 .s2-table .nowrap{white-space:nowrap}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
@@ -621,6 +622,21 @@ body.drawer-open{overflow:hidden}
   </section>
 </dialog>
 
+<dialog class="detail-dialog s3-detail-dialog" id="s3DetailDialog" aria-labelledby="s3DetailTitle">
+  <section class="detail-card">
+    <header class="detail-head">
+      <div>
+        <div class="detail-kicker">S3 数据对账</div>
+        <h2 id="s3DetailTitle">对账详情</h2>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-square" id="s3DetailClose" type="button" aria-label="关闭对账详情">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="detail-body" id="s3DetailBody">正在读取…</div>
+  </section>
+</dialog>
+
 <script>
 (function () {
   "use strict";
@@ -660,6 +676,10 @@ body.drawer-open{overflow:hidden}
   var s2DetailTitle = document.getElementById("s2DetailTitle");
   var s2DetailBody = document.getElementById("s2DetailBody");
   var s2DetailClose = document.getElementById("s2DetailClose");
+  var s3DetailDialog = document.getElementById("s3DetailDialog");
+  var s3DetailTitle = document.getElementById("s3DetailTitle");
+  var s3DetailBody = document.getElementById("s3DetailBody");
+  var s3DetailClose = document.getElementById("s3DetailClose");
 
   var LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 17v-4.5M12 17V7M17 17v-7"/></svg>';
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>';
@@ -774,6 +794,20 @@ body.drawer-open{overflow:hidden}
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openStage();
+          }
+        });
+      }
+      if (stage.key === "s3" && data && data.run) {
+        li.classList.add("clickable");
+        li.setAttribute("role", "button");
+        li.setAttribute("tabindex", "0");
+        li.setAttribute("aria-label", "查看 S3 对账详情");
+        var openS3 = function () { openS3Detail(data.run); };
+        li.addEventListener("click", openS3);
+        li.addEventListener("keydown", function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openS3();
           }
         });
       }
@@ -1331,6 +1365,159 @@ body.drawer-open{overflow:hidden}
     }
   }
 
+  function s3Tone(state) {
+    if (state === "ok") return "ok";
+    if (state === "blocked") return "stop";
+    return "warn";
+  }
+
+  function s3StateLabel(state) {
+    if (state === "ok") return "对账完成";
+    if (state === "blocked") return "对账未完成";
+    return String(state || "未知");
+  }
+
+  function s3LevelTone(level) {
+    if (level === "阻断") return "stop";
+    if (level === "提示") return "warn";
+    return "";
+  }
+
+  function renderS3Detail(issues, ledger) {
+    var body = s3DetailBody;
+    body.textContent = "";
+    body.scrollTop = 0;
+    var state = String(issues.state || "");
+    var stats = issues.stats || {};
+    var bar = el("div", "detail-state " + s3Tone(state));
+    bar.appendChild(el("span", "d-state-badge", s3StateLabel(state)));
+    bar.appendChild(el("span", "detail-state-msg", issues.message || ""));
+    body.appendChild(bar);
+
+    var meta = [issues.run_id, issues.week].filter(Boolean).join(" · ");
+    if (meta) body.appendChild(el("p", "detail-note", meta));
+
+    var grid = el("div", "s2-stats");
+    [
+      ["阻断", stats.blocking || 0],
+      ["提示", stats.warn || 0],
+      ["信息", stats.info || 0],
+      ["已核对", stats.checked || 0]
+    ].forEach(function (item) {
+      var box = el("div", "s2-stat");
+      box.appendChild(el("div", "k", item[0]));
+      box.appendChild(el("div", "v", String(item[1])));
+      grid.appendChild(box);
+    });
+    body.appendChild(grid);
+
+    var issueList = issues.issues || [];
+    if (issueList.length) {
+      var issueSec = detailSection("问题清单");
+      var issueUl = el("ul", "detail-list");
+      issueList.forEach(function (item) {
+        var li = el("li");
+        li.appendChild(el("span", "d-tag " + s3LevelTone(item.level), item.level || "信息"));
+        li.appendChild(el("span", "d-tag", item.id || ""));
+        li.appendChild(document.createTextNode(item.subject || ""));
+        if (item.minutes_said) li.appendChild(el("div", "detail-sub", "纪要：" + item.minutes_said));
+        var raw = item.raw ? "数据：" + item.raw : "";
+        if (item.diff !== null && item.diff !== undefined) {
+          raw += (raw ? " · " : "") + "差异：" + item.diff;
+        }
+        if (raw) li.appendChild(el("div", "detail-sub", raw));
+        if (item.suggest) li.appendChild(el("div", "detail-sub", "建议：" + item.suggest));
+        issueUl.appendChild(li);
+      });
+      issueSec.appendChild(issueUl);
+      body.appendChild(issueSec);
+    } else {
+      body.appendChild(el("p", "detail-note", "没有对账问题。"));
+    }
+
+    var results = issues.results || [];
+    if (results.length) {
+      var resultSec = detailSection("核对结果");
+      var resultUl = el("ul", "detail-list");
+      results.forEach(function (item) {
+        var li = el("li");
+        li.appendChild(el("span", "d-tag", item.card || "卡"));
+        li.appendChild(document.createTextNode(item.subject || ""));
+        if (item.raw) li.appendChild(el("div", "detail-sub", "数据：" + item.raw));
+        if (item.explain) li.appendChild(el("div", "detail-sub", item.explain));
+        resultUl.appendChild(li);
+      });
+      resultSec.appendChild(resultUl);
+      body.appendChild(resultSec);
+    }
+
+    var coverage = issues.coverage || [];
+    if (coverage.length) {
+      var coverSec = detailSection("覆盖检查");
+      var coverUl = el("ul", "detail-list");
+      coverage.forEach(function (item) {
+        var li = el("li");
+        var covered = item.status === "covered";
+        li.appendChild(el("span", "d-tag " + (covered ? "ok" : "warn"), covered ? "已覆盖" : (item.status || "未覆盖")));
+        li.appendChild(document.createTextNode(item.item || ""));
+        if (item.note) li.appendChild(el("div", "detail-sub", item.note));
+        coverUl.appendChild(li);
+      });
+      coverSec.appendChild(coverUl);
+      body.appendChild(coverSec);
+    }
+
+    var entries = (ledger && ledger.entries) || [];
+    if (entries.length) {
+      var ledgerSec = detailSection("数字台账");
+      var wrap = el("div", "s2-table-wrap");
+      var table = el("table", "s2-table");
+      var thead = el("thead");
+      var headRow = el("tr");
+      ["卡片", "数值", "判定", "代码", "口径"].forEach(function (text) {
+        headRow.appendChild(el("th", "", text));
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      var tbody = el("tbody");
+      entries.forEach(function (entry) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "nowrap", entry.card || ""));
+        var shown = entry.display || (entry.value !== undefined ? String(entry.value) : "—");
+        tr.appendChild(el("td", "nowrap", shown + (entry.unit ? " " + entry.unit : "")));
+        var verdict = String(entry.verdict || "");
+        var vTone = verdict === "match" ? "ok" : (verdict === "mismatch" ? "stop" : "warn");
+        var vTd = el("td", "nowrap");
+        vTd.appendChild(el("span", "d-tag " + vTone, verdict || "—"));
+        tr.appendChild(vTd);
+        tr.appendChild(el("td", "nowrap s3-code", entry.code_hash || "—"));
+        tr.appendChild(el("td", "detail-sub s2-source", entry.spec || ""));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      ledgerSec.appendChild(wrap);
+      body.appendChild(ledgerSec);
+    }
+  }
+
+  async function openS3Detail(runId) {
+    if (!runId) return;
+    s3DetailTitle.textContent = "S3 · " + String(runId).toUpperCase();
+    s3DetailBody.textContent = "正在读取…";
+    if (!s3DetailDialog.open) s3DetailDialog.showModal();
+    try {
+      var resp = await fetch("/api/s3/" + encodeURIComponent(runId));
+      var data = await resp.json();
+      if (!data.ok || !data.issues || !Object.keys(data.issues).length) {
+        throw new Error(data.error || "没有这次对账结果");
+      }
+      renderS3Detail(data.issues, data.ledger || {});
+    } catch (err) {
+      s3DetailBody.textContent = "读取失败：" + (err.message || err);
+    }
+  }
+
   function updateS1Pill(tag, state) {
     var pills = messages.querySelectorAll(".event-link");
     Array.prototype.forEach.call(pills, function (pill) {
@@ -1731,6 +1918,11 @@ body.drawer-open{overflow:hidden}
   s2DetailClose.addEventListener("click", function () { s2DetailDialog.close(); });
   s2DetailDialog.addEventListener("click", function (event) {
     if (event.target === s2DetailDialog) s2DetailDialog.close();
+  });
+
+  s3DetailClose.addEventListener("click", function () { s3DetailDialog.close(); });
+  s3DetailDialog.addEventListener("click", function (event) {
+    if (event.target === s3DetailDialog) s3DetailDialog.close();
   });
 
   function setBusy(busy) {
