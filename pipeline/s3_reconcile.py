@@ -531,7 +531,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
     result.state = "ok"
     result.message = ("已核对 " + str(stats.checked) + " 条；阻断 "
                       + str(stats.blocking) + " 条、提示 " + str(stats.warn)
-                      + " 条、信息 " + str(stats.info) + " 条。")
+                      + " 条；另有 " + str(stats.info) + " 条数据说明。")
     log.append(result.message)
 
     _write(run_dir, result, ledger)

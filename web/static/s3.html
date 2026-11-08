@@ -429,7 +429,7 @@
       </div>
 
       <section class="block">
-        <h3>问题清单</h3>
+        <h3>问题清单 <span class="hint" style="font-weight:400;font-size:12px;color:var(--muted)">阻断和提示，会影响结论</span></h3>
         <div class="tablewrap">
           <table>
             <thead>
@@ -439,6 +439,17 @@
           </table>
         </div>
         <p class="empty-note" id="issueEmpty">无</p>
+      </section>
+
+      <section class="block" id="noteBlock">
+        <h3>数据说明 <span class="hint" style="font-weight:400;font-size:12px;color:var(--muted)">材料和口径的记录项，不影响流程</span></h3>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>#</th><th>对象</th><th>说明</th></tr></thead>
+            <tbody id="noteRows"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="noteEmpty">无</p>
       </section>
 
       <section class="block">
@@ -628,7 +639,9 @@
 
     var rows = document.getElementById("issueRows");
     rows.textContent = "";
-    var list = issues.issues || [];
+    var all = issues.issues || [];
+    var list = all.filter(function (item) { return item.level !== "信息"; });
+    var notes = all.filter(function (item) { return item.level === "信息"; });
     document.getElementById("issueEmpty").style.display = list.length ? "none" : "";
     list.forEach(function (item) {
       var tr = el("tr");
@@ -645,6 +658,19 @@
         item.diff === null || item.diff === undefined ? "—" : (item.diff * 100).toFixed(1) + "%"));
       tr.appendChild(el("td", "", item.suggest || ""));
       rows.appendChild(tr);
+    });
+
+    var nrows = document.getElementById("noteRows");
+    nrows.textContent = "";
+    document.getElementById("noteEmpty").style.display = notes.length ? "none" : "";
+    notes.forEach(function (item) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "mono nowrap", item.id));
+      var sub = el("td", "", item.subject || "");
+      sub.appendChild(el("span", "sub", item.type || ""));
+      tr.appendChild(sub);
+      tr.appendChild(el("td", "", item.suggest || ""));
+      nrows.appendChild(tr);
     });
 
     var rrows = document.getElementById("resultRows");
