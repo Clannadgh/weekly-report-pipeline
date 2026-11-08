@@ -331,6 +331,11 @@ body.drawer-open{overflow:hidden}
 .detail-kicker{font-size:11px;letter-spacing:.08em;color:var(--muted)}
 .detail-head h2{margin:2px 0 0;font-size:18px;line-height:1.35;font-weight:600}
 .detail-body{padding:18px 20px 20px;overflow-y:auto}
+.detail-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  padding:12px 20px;border-top:1px solid var(--line);background:var(--surface);
+}
+.detail-foot .detail-foot-hint{flex:1;min-width:200px;font-size:11.5px;line-height:1.55;color:var(--muted)}
 .detail-state{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   padding:10px 12px;border:1px solid var(--line);border-radius:10px;
@@ -398,6 +403,7 @@ body.drawer-open{overflow:hidden}
   .detail-head{padding:14px 16px}
   .detail-head h2{font-size:16px}
   .detail-body{padding:14px}
+  .detail-foot{padding:12px 16px}
   .detail-meta{grid-template-columns:1fr}
 }
 @media (max-width:560px){
@@ -518,6 +524,7 @@ body.drawer-open{overflow:hidden}
       </button>
     </header>
     <div class="detail-body" id="runDetailBody">正在读取…</div>
+    <footer class="detail-foot" id="runDetailFoot" hidden></footer>
   </section>
 </dialog>
 
@@ -553,6 +560,7 @@ body.drawer-open{overflow:hidden}
   var runDetailDialog = document.getElementById("runDetailDialog");
   var runDetailTitle = document.getElementById("runDetailTitle");
   var runDetailBody = document.getElementById("runDetailBody");
+  var runDetailFoot = document.getElementById("runDetailFoot");
   var runDetailClose = document.getElementById("runDetailClose");
 
   var LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 17v-4.5M12 17V7M17 17v-7"/></svg>';
@@ -792,11 +800,18 @@ body.drawer-open{overflow:hidden}
   function renderRunDetail(intake, status) {
     var body = runDetailBody;
     body.textContent = "";
+    body.scrollTop = 0;
+    runDetailFoot.textContent = "";
+    runDetailFoot.hidden = true;
     var state = String(intake.state || "未知");
     var tone = stateTone(state);
 
     var bar = el("div", "detail-state " + tone);
     bar.appendChild(el("span", "d-state-badge", state));
+    var manual = (intake.waived || []).some(function (item) {
+      return (item.items || []).indexOf("人工放权") >= 0;
+    });
+    if (manual) bar.appendChild(el("span", "d-tag warn", "人工放权"));
     bar.appendChild(el("span", "detail-state-msg", intake.message || ""));
     body.appendChild(bar);
 
@@ -915,6 +930,19 @@ body.drawer-open{overflow:hidden}
       historySec.appendChild(historyList);
       body.appendChild(historySec);
     }
+
+    var runTag = String(run.period_tag || "");
+    if (state !== "准入通过" && runTag && (counts.data || 0) > 0 && (counts.minutes || 0) > 0) {
+      runDetailFoot.appendChild(el("span", "detail-foot-hint",
+        "放权会保留原始问题，相关结论无法用数据核实。"));
+      var overrideBtn = el("button", "btn btn-error btn-sm", "人工放权");
+      overrideBtn.type = "button";
+      overrideBtn.addEventListener("click", function () {
+        overrideRun(runTag, state, overrideBtn);
+      });
+      runDetailFoot.appendChild(overrideBtn);
+      runDetailFoot.hidden = false;
+    }
   }
 
   async function openRunDetail(runId) {
@@ -932,6 +960,51 @@ body.drawer-open{overflow:hidden}
     }
   }
 
+  function updateS1Pill(tag, state) {
+    var pills = messages.querySelectorAll(".event-link");
+    Array.prototype.forEach.call(pills, function (pill) {
+      if (pill.getAttribute("data-run") === String(tag)) {
+        pill.setAttribute("data-state", state || "");
+        var circle = pill.querySelector(".event-status");
+        if (circle) circle.className = "event-status " + stateTone(state);
+      }
+    });
+  }
+
+  async function overrideRun(tag, state, btn) {
+    var ok = await askConfirm(
+      "人工放权？",
+      "S1 原始状态为「" + state + "」。放行后可以继续 S2，但原始问题会保留在记录里，相关结论无法用数据核实。",
+      "确认放权"
+    );
+    if (!ok) return;
+    btn.disabled = true;
+    btn.textContent = "放权中…";
+    try {
+      var resp = await fetch("/api/runs/" + encodeURIComponent(tag) + "/waive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          override: true,
+          items: [],
+          reason: "用户在 S1 详情中确认人工放权",
+          session_id: sessionId || ""
+        })
+      });
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.error || "放权失败");
+      updateS1Pill(tag, (data.intake || {}).state || "准入通过");
+      renderRunDetail(data.intake || {}, data.status || {});
+      if (data.note) appendMessage("assistant", data.note);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "人工放权";
+      var note = el("p", "detail-note", "放权失败：" + (err.message || err));
+      runDetailBody.insertBefore(note, runDetailBody.firstChild);
+      runDetailBody.scrollTop = 0;
+    }
+  }
+
   function appendEvents(events, msg) {
     if (!events || !events.length) return;
     var host = msg.querySelector(".msg-body") || msg;
@@ -942,6 +1015,8 @@ body.drawer-open{overflow:hidden}
       if (isS1) {
         pill.type = "button";
         pill.title = "查看 S1 详情";
+        pill.setAttribute("data-run", ev.run_id);
+        pill.setAttribute("data-state", ev.state || "");
         pill.appendChild(el("span", "event-status " + stateTone(ev.state)));
       } else {
         var dot = el("span", "event-dot" + (ev.ok ? " ok" : (ev.state ? " bad" : "")));

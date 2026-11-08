@@ -1050,6 +1050,7 @@ def run_intake(
     pause_reasons: list[str] = []
     if ai_blocker:
         pause_reasons.append(ai_blocker)
+        questions.append(ai_blocker + "；请处理后再重跑 S1。")
 
     unreadable = [info for _p, info in records if not info.readable]
     if unreadable:
@@ -1078,11 +1079,15 @@ def run_intake(
 
     # 人工豁免：读 waiver.json，把已确认接受的冲突摘出来；不是删除，是留痕
     waived: list[Waiver] = []
+    manual_override = False
     waiver_path = (run_dir / "waiver.json") if run_dir is not None else None
     if waiver_path is not None and waiver_path.exists():
         try:
             waiver_data = json.loads(waiver_path.read_text(encoding="utf-8"))
+            if not isinstance(waiver_data, dict):
+                waiver_data = {}
             keys = [str(x) for x in (waiver_data.get("items") or []) if str(x).strip()]
+            override = bool(waiver_data.get("override")) and not bool(waiver_data.get("used"))
             if keys:
                 for conflict in list(consistency.conflicts):
                     if any(key in conflict.detail for key in keys):
@@ -1094,6 +1099,15 @@ def run_intake(
                             reason=str(waiver_data.get("reason") or ""),
                         ))
                 log.append(f"人工豁免：" + str(len(waived)) + " 项冲突已确认接受")
+            if override:
+                manual_override = True
+                waived.append(Waiver(
+                    at=str(waiver_data.get("at") or ""),
+                    by=str(waiver_data.get("by") or ""),
+                    items=["人工放权"],
+                    reason=str(waiver_data.get("reason") or ""),
+                ))
+                log.append("人工放权：本次 S1 强制放行")
         except Exception as exc:  # noqa: BLE001
             log.append("waiver.json 读取失败：" + str(exc))
 
@@ -1132,18 +1146,28 @@ def run_intake(
     else:
         state = "准入通过"
 
-    if state == "准入通过" and questions:
+    original_state = state
+    if manual_override:
+        state = "准入通过"
+
+    if state == "准入通过" and questions and not manual_override:
         state = "待补充"
     if state == "待补充" and not questions:
         questions.append("存在待人工确认的事项，请核对 intake.json 后重跑 S1。")
 
     if state == "准入通过":
-        extra = f"；含 {len(degrade)} 项降级口径" if degrade else ""
-        waive_note = f"；{len(waived)} 项冲突经人工确认豁免" if waived else ""
-        message = (
-            f"材料齐备：{counts.data} 个数据文件 + 1 份纪要，周期 {minutes.week}"
-            f"（{minutes.period_start} 至 {minutes.period_end}）{extra}{waive_note}，可进入 S2。"
-        )
+        if manual_override:
+            message = (
+                f"人工放权：原始判定为「{original_state}」，已按用户确认放行；"
+                "原始问题仍保留在 questions 中，可进入 S2，但相关结论无法用数据核实。"
+            )
+        else:
+            extra = f"；含 {len(degrade)} 项降级口径" if degrade else ""
+            waive_note = f"；{len(waived)} 项冲突经人工确认豁免" if waived else ""
+            message = (
+                f"材料齐备：{counts.data} 个数据文件 + 1 份纪要，周期 {minutes.week}"
+                f"（{minutes.period_start} 至 {minutes.period_end}）{extra}{waive_note}，可进入 S2。"
+            )
         next_action = "continue"
     elif state == "待补充":
         message = f"{'、'.join(blocked_items)}，已写入 questions，补齐后重跑 S1。"

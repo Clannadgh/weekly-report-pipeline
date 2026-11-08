@@ -592,7 +592,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, body, ASSET_TYPES[ext])
 
     def handle_waive(self, tag: str) -> None:
-        """登记人工豁免并重跑 S1。不改判定规则，只是把「人已确认接受」记下来。"""
+        """登记人工豁免/人工放权并重跑 S1；不改判定规则，只记录人的决定。"""
         payload = self.read_json_body()
         if payload is None:
             return
@@ -601,15 +601,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(404, "找不到运行目录：" + tag)
             return
         items = [str(x).strip() for x in (payload.get("items") or []) if str(x).strip()]
-        if not items:
+        override = bool(payload.get("override"))
+        if not items and not override:
             self.send_error_json(400, "没有给要豁免的冲突关键词", "")
             return
-        reason = str(payload.get("reason") or "").strip() or "用户确认可忽略"
+        reason = (str(payload.get("reason") or "").strip()
+                  or ("用户确认人工放权" if override else "用户确认可忽略"))
         waiver = {
             "at": dt.datetime.now().isoformat(timespec="seconds"),
             "by": str(payload.get("by") or "用户"),
             "items": items,
             "reason": reason,
+            "override": override,
+            "used": False,
         }
         try:
             with open(os.path.join(folder, "waiver.json"), "w", encoding="utf-8") as fh:
@@ -647,8 +651,35 @@ class Handler(BaseHTTPRequestHandler):
             log("豁免后重跑 S1 失败：" + repr(exc))
             self.send_error_json(500, "重跑 S1 失败", traceback.format_exc())
             return
-        log("人工豁免 " + ",".join(items) + " → " + result.state)
-        self.send_json({"ok": True, "intake": to_plain(result), "waiver": waiver, "log": logs})
+        log(("人工放权" if override else "人工豁免 " + ",".join(items)) + " → " + result.state)
+        if override:
+            waiver_used = dict(waiver)
+            waiver_used["used"] = True
+            try:
+                with open(os.path.join(folder, "waiver.json"), "w", encoding="utf-8") as fh:
+                    json.dump(waiver_used, fh, ensure_ascii=False, indent=2)
+                waiver["used"] = True
+            except OSError as exc:
+                log("标记放权已使用失败：" + str(exc))
+
+        note = ""
+        session_id = str(payload.get("session_id") or "").strip()
+        if override and session_id:
+            with _SESSION_LOCK:
+                session = _SESSIONS.get(session_id)
+            if session is not None:
+                note = ("已人工放权：S1 现在按准入通过处理，可以继续 S2。"
+                        "原始问题仍保留在运行详情里。")
+                try:
+                    session.messages.append({"role": "assistant", "content": note})
+                    session.last_run = (result.run.period_tag or session.last_run)
+                    session.save()
+                except Exception as exc:  # noqa: BLE001
+                    log("写入会话放权提示失败：" + repr(exc))
+
+        status = try_read_json(os.path.join(folder, "status.json"))
+        self.send_json({"ok": True, "intake": to_plain(result), "status": status,
+                        "waiver": waiver, "note": note, "log": logs})
 
     def serve_s3_result(self, run_id: str) -> None:
         """读已落盘的 issues.json / ledger.json，不现场重算。"""
