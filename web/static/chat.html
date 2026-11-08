@@ -289,6 +289,21 @@
 @media (hover:none){.hist-del{opacity:1}}
 body.drawer-open{overflow:hidden}
 
+/* ---------- 删除确认弹窗 ---------- */
+.confirm-dialog{
+  width:calc(100% - 32px);max-width:420px;margin:auto;padding:0;border:0;
+  background:transparent;overflow:visible;
+}
+.confirm-dialog::backdrop{background:rgba(30,28,25,.32);backdrop-filter:blur(2px)}
+.confirm-card{
+  margin:0;padding:20px;border:1px solid var(--line);border-radius:16px;
+  background:var(--surface);box-shadow:var(--shadow);
+  animation:fadeUp .18s var(--ease);
+}
+.confirm-card h3{margin:0 0 8px;font-size:16px;line-height:1.4;font-weight:600;color:var(--ink)}
+.confirm-card p{margin:0;font-size:13px;line-height:1.7;color:var(--muted);overflow-wrap:break-word}
+.confirm-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+
 @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
 @keyframes slideIn{from{opacity:.5;transform:translateX(28px)}to{opacity:1;transform:none}}
@@ -406,6 +421,17 @@ body.drawer-open{overflow:hidden}
   </section>
 </dialog>
 
+<dialog class="confirm-dialog" id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+  <div class="confirm-card">
+    <h3 id="confirmTitle">删除这个对话？</h3>
+    <p id="confirmText">删除后不可恢复。</p>
+    <div class="confirm-actions">
+      <button class="btn btn-ghost btn-sm" id="confirmNo" type="button">取消</button>
+      <button class="btn btn-error btn-sm" id="confirmYes" type="button">删除</button>
+    </div>
+  </div>
+</dialog>
+
 <script>
 (function () {
   "use strict";
@@ -429,6 +455,12 @@ body.drawer-open{overflow:hidden}
   var historyDialog = document.getElementById("historyDialog");
   var historyList = document.getElementById("historyList");
   var drawerClose = document.getElementById("drawerClose");
+  var confirmDialog = document.getElementById("confirmDialog");
+  var confirmTitle = document.getElementById("confirmTitle");
+  var confirmText = document.getElementById("confirmText");
+  var confirmYes = document.getElementById("confirmYes");
+  var confirmNo = document.getElementById("confirmNo");
+  var confirmResolve = null;
 
   var LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 17v-4.5M12 17V7M17 17v-7"/></svg>';
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>';
@@ -807,6 +839,18 @@ body.drawer-open{overflow:hidden}
     if (historyDialog.open) historyDialog.close();
   }
 
+  function askConfirm(title, text, label) {
+    return new Promise(function (resolve) {
+      confirmResolve = resolve;
+      confirmTitle.textContent = title;
+      confirmText.textContent = text;
+      confirmYes.textContent = label || "确定";
+      confirmDialog.returnValue = "";
+      if (!confirmDialog.open) confirmDialog.showModal();
+      confirmNo.focus();
+    });
+  }
+
   function showHistoryError(text) {
     var old = historyList.querySelector(".hist-error");
     if (old) old.remove();
@@ -875,7 +919,14 @@ body.drawer-open{overflow:hidden}
           del.addEventListener("click", async function (event) {
             event.stopPropagation();
             if (sendBtn.disabled) return;
-            if (!window.confirm("删除这个对话？删除后不可恢复。")) return;
+            var preview = String(item.preview || "（无文字）");
+            if (preview.length > 40) preview = preview.slice(0, 40) + "…";
+            var ok = await askConfirm(
+              "删除这个对话？",
+              "「" + preview + "」删除后不可恢复，消息和附件都会一起删除。",
+              "删除"
+            );
+            if (!ok) return;
             del.disabled = true;
             try {
               var resp = await fetch("/api/chat/delete", {
@@ -919,6 +970,21 @@ body.drawer-open{overflow:hidden}
   });
   historyDialog.addEventListener("close", function () {
     document.body.classList.remove("drawer-open");
+  });
+
+  confirmNo.addEventListener("click", function () { confirmDialog.close("cancel"); });
+  confirmYes.addEventListener("click", function () { confirmDialog.close("confirm"); });
+  confirmDialog.addEventListener("click", function (event) {
+    if (event.target === confirmDialog) confirmDialog.close("cancel");
+  });
+  confirmDialog.addEventListener("close", function () {
+    var ok = confirmDialog.returnValue === "confirm";
+    confirmDialog.returnValue = "";
+    if (confirmResolve) {
+      var done = confirmResolve;
+      confirmResolve = null;
+      done(ok);
+    }
   });
 
   messages.addEventListener("click", function (event) {
