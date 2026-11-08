@@ -489,7 +489,7 @@ class Session:
         return payload
 
     def _run_s3(self, args: dict) -> dict:
-        """S3 对账。纯代码取数，不调模型。"""
+        """S3 对账：默认用 pandasai 生成取数代码，判定由代码按容差做；内置规则是可选离线引擎。"""
         run_id = str(args.get("run_id") or self.last_run or "").strip()
         if not run_id:
             return {"ok": False, "error": "还没有运行记录，先调 run_s1 和 run_s2。"}

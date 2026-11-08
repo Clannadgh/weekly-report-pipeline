@@ -1,8 +1,8 @@
 """S3 数据对账：拿 S2 的卡片去数据里取数，判对错，落 issues.json 与 ledger.json。
 
 边界：本步不做业务判断，不改纪要，不写正文。
-所有数字由内置规则算出（同输入同结果），不调用模型；因此台账的 code_hash 记「内置规则」，
-不伪造代码指纹。
+默认取数引擎是 pandasai：模型只负责生成取数代码，代码执行后由本步按容差判定，
+台账的 code_hash 记录这段代码；--engine builtin 可完全离线走内置规则，此时 code_hash 记「内置规则」。
 """
 from __future__ import annotations
 
