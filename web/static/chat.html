@@ -1422,44 +1422,70 @@ body.drawer-open{overflow:hidden}
     });
 
     var issueList = issues.issues || [];
-    var checked = Number(stats.checked) || 0;
-    var issueCards = {};
+    var issueByCard = {};
     issueList.forEach(function (item) {
-      if (item.card) issueCards[item.card] = true;
+      if (item.card) issueByCard[item.card] = item;
     });
-    var matched = Math.max(checked - Object.keys(issueCards).length, 0);
-    if (checked && matched > 0) {
-      body.appendChild(el("p", "detail-note",
-        "已核对 " + checked + " 张卡片；其中 " + matched +
-        " 张匹配，未列入问题清单。问题清单只列有问题的卡片。"));
-    }
 
-    if (issueList.length) {
-      var issueSec = detailSection("问题清单");
+    var rows = [];
+    var seen = {};
+    results.forEach(function (result) {
+      var card = result.card || "";
+      var issue = card ? issueByCard[card] : null;
+      rows.push({ card: card, result: result, issue: issue });
+      if (card) seen[card] = true;
+    });
+    issueList.forEach(function (issue) {
+      if (!issue.card || !seen[issue.card]) {
+        rows.push({
+          card: issue.card || "",
+          result: issue.card ? resultByCard[issue.card] : null,
+          issue: issue
+        });
+        if (issue.card) seen[issue.card] = true;
+      }
+    });
+
+    if (rows.length) {
+      var issueSec = detailSection("核对清单");
       var issueUl = el("ul", "detail-list");
-      issueList.forEach(function (item) {
+      rows.forEach(function (row) {
+        var issue = row.issue;
+        var result = row.result;
+        var level = issue ? (issue.level || "信息") : "匹配";
+        var tone = issue ? s3LevelTone(level) : "ok";
         var li = el("li");
-        li.appendChild(el("span", "d-tag " + s3LevelTone(item.level), item.level || "信息"));
-        li.appendChild(el("span", "d-tag", item.id || ""));
-        li.appendChild(document.createTextNode(item.subject || ""));
-        if (item.minutes_said) li.appendChild(el("div", "detail-sub", "纪要：" + item.minutes_said));
-        var raw = item.raw ? "数据：" + item.raw : "";
-        if (item.diff !== null && item.diff !== undefined) {
-          raw += (raw ? " · " : "") + "差异：" + item.diff;
+        li.appendChild(el("span", "d-tag " + tone, level));
+        li.appendChild(el("span", "d-tag", (issue && issue.id) || row.card || "已核对"));
+        li.appendChild(document.createTextNode(
+          (issue && issue.subject) || (result && result.subject) || ""
+        ));
+        if (issue && issue.minutes_said) {
+          li.appendChild(el("div", "detail-sub", "纪要：" + issue.minutes_said));
         }
-        if (raw) li.appendChild(el("div", "detail-sub", raw));
-        var matched = resultByCard[item.card];
-        var explain = matched && matched.explain
-          ? matched.explain
-          : (ledgerByCard[item.card] && ledgerByCard[item.card].spec ? ledgerByCard[item.card].spec : "");
+        var rawValue = (issue && issue.raw) || (result && result.raw) || "";
+        if (rawValue) {
+          var dataText = "数据：" + rawValue;
+          if (issue && issue.diff !== null && issue.diff !== undefined) {
+            dataText += " · 差异：" + issue.diff;
+          }
+          li.appendChild(el("div", "detail-sub", dataText));
+        }
+        var explain = (result && result.explain)
+          || (ledgerByCard[row.card] && ledgerByCard[row.card].spec)
+          || "";
         if (explain) li.appendChild(el("div", "detail-sub", explain));
-        if (item.suggest) li.appendChild(el("div", "detail-sub", "建议：" + item.suggest));
+        if (issue && issue.suggest) {
+          li.appendChild(el("div", "detail-sub", "建议：" + issue.suggest));
+        } else if (!issue) {
+          li.appendChild(el("div", "detail-sub", "核对通过，未发现差异。"));
+        }
         issueUl.appendChild(li);
       });
       issueSec.appendChild(issueUl);
       body.appendChild(issueSec);
     } else {
-      body.appendChild(el("p", "detail-note", "没有对账问题。"));
+      body.appendChild(el("p", "detail-note", "没有核对结果。"));
     }
 
   }
