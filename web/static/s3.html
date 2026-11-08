@@ -429,6 +429,16 @@
       </div>
 
       <section class="block">
+        <h3>卡片核对 <span class="hint" style="font-weight:400;font-size:12px;color:var(--muted)">每张「能对数据」的卡片各是什么结论</span></h3>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>卡片</th><th>对象</th><th>结论</th><th>数据</th><th>说明</th></tr></thead>
+            <tbody id="cardRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="block">
         <h3>问题清单 <span class="hint" style="font-weight:400;font-size:12px;color:var(--muted)">阻断和提示，会影响结论</span></h3>
         <div class="tablewrap">
           <table>
@@ -637,6 +647,40 @@
     document.getElementById("sInfo").textContent = stats.info || 0;
     document.getElementById("sChecked").textContent = stats.checked || 0;
 
+    var byCard = {};
+    (issues.results || []).forEach(function (item) {
+      byCard[item.card] = {
+        card: item.card, subject: item.subject || "", level: "已核对",
+        raw: item.raw || "", note: item.explain || ""
+      };
+    });
+    (issues.issues || []).forEach(function (item) {
+      if (!item.card) return;
+      byCard[item.card] = {
+        card: item.card, subject: item.subject || "", level: item.level,
+        raw: item.raw || "", note: item.suggest || ""
+      };
+    });
+    var cardRows = document.getElementById("cardRows");
+    cardRows.textContent = "";
+    Object.keys(byCard).sort().forEach(function (key) {
+      var item = byCard[key];
+      var tr = el("tr");
+      tr.appendChild(el("td", "mono nowrap", item.card));
+      tr.appendChild(el("td", "", item.subject));
+      var lv = el("td", "nowrap");
+      var cls = item.level === "阻断" ? "missing"
+              : (item.level === "提示" ? "degrade"
+              : (item.level === "信息" ? "extra" : "have"));
+      lv.appendChild(el("span", "tag " + cls, item.level));
+      tr.appendChild(lv);
+      tr.appendChild(el("td", "mono nowrap", item.raw || "—"));
+      var note = String(item.note || "");
+      if (note.length > 90) note = note.slice(0, 90) + "…";
+      tr.appendChild(el("td", "sub", note));
+      cardRows.appendChild(tr);
+    });
+
     var rows = document.getElementById("issueRows");
     rows.textContent = "";
     var all = issues.issues || [];
@@ -650,7 +694,8 @@
       lv.appendChild(levelTag(item.level));
       tr.appendChild(lv);
       var sub = el("td", "", item.subject || "");
-      sub.appendChild(el("span", "sub", item.type || ""));
+      sub.appendChild(el("span", "sub",
+        (item.card ? "来源 " + item.card : "全量扫描") + " · " + (item.type || "")));
       tr.appendChild(sub);
       tr.appendChild(el("td", "quote-cell", item.minutes_said || "—"));
       tr.appendChild(el("td", "mono nowrap", item.raw || "—"));

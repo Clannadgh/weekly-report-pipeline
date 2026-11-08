@@ -257,6 +257,8 @@ class IssueItem(BaseModel):
 class ResultItem(BaseModel):
     """一条已对上的结果，explain 是六项固定说明。"""
     card: str = ""
+    subject: str = ""
+    raw: str = ""
     explain: str = ""
     value: float | None = None
     question_hash: str = ""

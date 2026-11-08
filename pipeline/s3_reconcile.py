@@ -465,7 +465,10 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                    + period + "；筛选 " + column + " 为 " + entity
                    + "；口径为" + metric + "求和；结果 " + _display(current, unit)
                    + ("" if unit == "%" else " " + unit) + "。")
-        results.append(ResultItem(card=card_id, explain=explain,
+        raw_text = (_display(change, "%") if change is not None
+                    else _display(current, unit))
+        results.append(ResultItem(card=card_id, subject=entity + " " + metric,
+                                  raw=raw_text, explain=explain,
                                   value=float(current), question_hash=qhash))
         stats.checked += 1
 
