@@ -164,7 +164,7 @@ def _validate(raw: dict, columns_by_file: dict[str, list[str]],
             continue
         values = [str(v).strip() for v in (item.get("values") or []) if str(v).strip()]
         values = [v for v in values if not re.fullmatch(
-            r"d{4}s*[-/年]s*d{1,2}s*[-/月]s*d{1,2}s*日?", v)]
+            r"\d{4}\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*日?", v)]
         if not values:
             continue
         result.entities.append(EntityMap(type=str(item.get("type") or "其他"),

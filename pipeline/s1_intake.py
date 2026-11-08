@@ -651,7 +651,7 @@ def _load_history(status_file: Path) -> list[StatusHistory]:
 
 def _norm_text(value: str) -> str:
     """去掉所有空白：数据里的「成 都春熙路店」和纪要里的「成都春熙路店」算同一个。"""
-    return re.sub(r"[s　]+", "", str(value or ""))
+    return re.sub(r"[\s\u3000]+", "", str(value or ""))
 
 
 def _entity_known(value: str, known_norm: set[str]) -> bool:
@@ -659,7 +659,7 @@ def _entity_known(value: str, known_norm: set[str]) -> bool:
     text = _norm_text(value)
     if not text:
         return True
-    if re.fullmatch(r"d{4}[-/年]d{1,2}[-/月]d{1,2}日?", text):
+    if re.fullmatch(r"\d{4}\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*日?", text):
         return True
     if text in known_norm:
         return True
