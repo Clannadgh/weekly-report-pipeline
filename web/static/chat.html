@@ -1411,6 +1411,16 @@ body.drawer-open{overflow:hidden}
     });
     body.appendChild(grid);
 
+    var results = issues.results || [];
+    var resultByCard = {};
+    results.forEach(function (item) {
+      if (item.card) resultByCard[item.card] = item;
+    });
+    var ledgerByCard = {};
+    ((ledger && ledger.entries) || []).forEach(function (entry) {
+      if (entry.card && !ledgerByCard[entry.card]) ledgerByCard[entry.card] = entry;
+    });
+
     var issueList = issues.issues || [];
     if (issueList.length) {
       var issueSec = detailSection("问题清单");
@@ -1426,6 +1436,11 @@ body.drawer-open{overflow:hidden}
           raw += (raw ? " · " : "") + "差异：" + item.diff;
         }
         if (raw) li.appendChild(el("div", "detail-sub", raw));
+        var matched = resultByCard[item.card];
+        var explain = matched && matched.explain
+          ? matched.explain
+          : (ledgerByCard[item.card] && ledgerByCard[item.card].spec ? ledgerByCard[item.card].spec : "");
+        if (explain) li.appendChild(el("div", "detail-sub", explain));
         if (item.suggest) li.appendChild(el("div", "detail-sub", "建议：" + item.suggest));
         issueUl.appendChild(li);
       });
@@ -1433,22 +1448,6 @@ body.drawer-open{overflow:hidden}
       body.appendChild(issueSec);
     } else {
       body.appendChild(el("p", "detail-note", "没有对账问题。"));
-    }
-
-    var results = issues.results || [];
-    if (results.length) {
-      var resultSec = detailSection("核对结果");
-      var resultUl = el("ul", "detail-list");
-      results.forEach(function (item) {
-        var li = el("li");
-        li.appendChild(el("span", "d-tag", item.card || "卡"));
-        li.appendChild(document.createTextNode(item.subject || ""));
-        if (item.raw) li.appendChild(el("div", "detail-sub", "数据：" + item.raw));
-        if (item.explain) li.appendChild(el("div", "detail-sub", item.explain));
-        resultUl.appendChild(li);
-      });
-      resultSec.appendChild(resultUl);
-      body.appendChild(resultSec);
     }
 
     var coverage = issues.coverage || [];
