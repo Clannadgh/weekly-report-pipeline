@@ -145,6 +145,20 @@
 .event-dot.ok{background:var(--ok)}
 .event-dot.bad{background:var(--danger)}
 .event-run{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+.event-link{
+  font:inherit;color:var(--muted);cursor:pointer;text-align:left;
+  transition:border-color .16s var(--ease),background-color .16s var(--ease),color .16s var(--ease);
+}
+.event-link:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--ink-2)}
+.event-status{
+  width:12px;height:12px;flex:none;display:inline-block;position:relative;
+  border-radius:50%;border:2px solid var(--line-strong);color:var(--line-strong);
+}
+.event-status::after{content:"";position:absolute;inset:2px;border-radius:50%;background:currentColor}
+.event-status.ok{border-color:var(--ok);color:var(--ok)}
+.event-status.warn{border-color:var(--warn);color:var(--warn)}
+.event-status.stop{border-color:var(--danger);color:var(--danger)}
+.event-more{color:var(--muted);font-size:14px;line-height:1;margin-left:1px}
 
 /* ---------- 执行过程 ---------- */
 .trace{
@@ -299,6 +313,60 @@ body.drawer-open{overflow:hidden}
 .confirm-card p{margin:0;font-size:13px;line-height:1.7;color:var(--muted);overflow-wrap:break-word}
 .confirm-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 
+/* ---------- S1 运行详情 ---------- */
+.detail-dialog{
+  width:calc(100% - 32px);max-width:720px;max-height:84vh;margin:auto;padding:0;border:0;
+  background:transparent;overflow:visible;
+}
+.detail-dialog::backdrop{background:rgba(30,28,25,.34);backdrop-filter:blur(2px)}
+.detail-card{
+  display:flex;flex-direction:column;max-height:84vh;overflow:hidden;
+  border:1px solid var(--line);border-radius:16px;background:var(--surface);
+  box-shadow:var(--shadow);animation:fadeUp .18s var(--ease);
+}
+.detail-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  padding:18px 20px;border-bottom:1px solid var(--line);
+}
+.detail-kicker{font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.detail-head h2{margin:2px 0 0;font-size:18px;line-height:1.35;font-weight:600}
+.detail-body{padding:18px 20px 20px;overflow-y:auto}
+.detail-state{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 12px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface-muted);
+}
+.detail-state.ok{background:var(--ok-soft);border-color:#b6e3c8}
+.detail-state.warn{background:var(--warn-soft);border-color:#f0dca4}
+.detail-state.stop{background:var(--danger-soft);border-color:#f0c9c4}
+.d-state-badge{
+  display:inline-block;padding:1px 9px;border-radius:999px;
+  background:var(--ink);color:#fff;font-size:11.5px;line-height:19px;white-space:nowrap;
+}
+.detail-state.ok .d-state-badge{background:var(--ok)}
+.detail-state.warn .d-state-badge{background:var(--warn)}
+.detail-state.stop .d-state-badge{background:var(--danger)}
+.detail-state-msg{flex:1;min-width:200px;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.detail-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 0}
+.detail-meta > div{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted)}
+.detail-meta .k{font-size:11px;color:var(--muted)}
+.detail-meta .v{margin-top:2px;font-size:13px;line-height:1.55;color:var(--ink)}
+.detail-section{margin-top:16px}
+.detail-section h3{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--ink)}
+.detail-list{list-style:none;margin:0;padding:0}
+.detail-list li{padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;line-height:1.65;color:var(--ink-2)}
+.detail-list li:last-child{border-bottom:0}
+.detail-sub{margin-top:3px;font-size:11.5px;line-height:1.6;color:var(--muted)}
+.detail-note{margin:12px 0 0;font-size:12.5px;line-height:1.7;color:var(--muted)}
+.d-tag{
+  display:inline-block;margin-right:6px;padding:0 7px;border-radius:999px;
+  background:var(--surface-muted);color:var(--ink-2);font-size:10.5px;line-height:18px;
+  white-space:nowrap;
+}
+.d-tag.ok{background:var(--ok-soft);color:var(--ok)}
+.d-tag.warn{background:var(--warn-soft);color:var(--warn)}
+.d-tag.stop{background:var(--danger-soft);color:var(--danger)}
+
 @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
 @keyframes slideIn{from{opacity:.5;transform:translateX(28px)}to{opacity:1;transform:none}}
@@ -325,6 +393,12 @@ body.drawer-open{overflow:hidden}
   .msg-content{font-size:14px}
   .bubble{font-size:14px}
   .history-panel{width:88vw}
+  .detail-dialog{max-height:90vh}
+  .detail-card{max-height:90vh}
+  .detail-head{padding:14px 16px}
+  .detail-head h2{font-size:16px}
+  .detail-body{padding:14px}
+  .detail-meta{grid-template-columns:1fr}
 }
 @media (max-width:560px){
   .nav a.runs-link{display:none}
@@ -432,6 +506,21 @@ body.drawer-open{overflow:hidden}
   </div>
 </dialog>
 
+<dialog class="detail-dialog" id="runDetailDialog" aria-labelledby="runDetailTitle">
+  <section class="detail-card">
+    <header class="detail-head">
+      <div>
+        <div class="detail-kicker">S1 准入检查</div>
+        <h2 id="runDetailTitle">运行详情</h2>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-square" id="runDetailClose" type="button" aria-label="关闭详情">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="detail-body" id="runDetailBody">正在读取…</div>
+  </section>
+</dialog>
+
 <script>
 (function () {
   "use strict";
@@ -461,6 +550,10 @@ body.drawer-open{overflow:hidden}
   var confirmYes = document.getElementById("confirmYes");
   var confirmNo = document.getElementById("confirmNo");
   var confirmResolve = null;
+  var runDetailDialog = document.getElementById("runDetailDialog");
+  var runDetailTitle = document.getElementById("runDetailTitle");
+  var runDetailBody = document.getElementById("runDetailBody");
+  var runDetailClose = document.getElementById("runDetailClose");
 
   var LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 17v-4.5M12 17V7M17 17v-7"/></svg>';
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>';
@@ -682,17 +775,171 @@ body.drawer-open{overflow:hidden}
     return msg;
   }
 
+  function stateTone(state) {
+    var s = String(state || "").trim();
+    if (s === "准入通过" || s === "ok" || s === "done") return "ok";
+    if (s === "待补充" || s === "warn" || s === "degrade") return "warn";
+    if (s === "暂停" || s === "failed" || s === "error") return "stop";
+    return "neutral";
+  }
+
+  function detailSection(title) {
+    var sec = el("section", "detail-section");
+    sec.appendChild(el("h3", "", title));
+    return sec;
+  }
+
+  function renderRunDetail(intake) {
+    var body = runDetailBody;
+    body.textContent = "";
+    var state = String(intake.state || "未知");
+    var tone = stateTone(state);
+
+    var bar = el("div", "detail-state " + tone);
+    bar.appendChild(el("span", "d-state-badge", state));
+    bar.appendChild(el("span", "detail-state-msg", intake.message || ""));
+    body.appendChild(bar);
+
+    var minutes = intake.minutes || {};
+    var coverage = intake.coverage || {};
+    var counts = intake.counts || {};
+    var run = intake.run || {};
+
+    var meta = el("div", "detail-meta");
+    function addMeta(label, value) {
+      var box = el("div");
+      box.appendChild(el("div", "k", label));
+      box.appendChild(el("div", "v", value || "—"));
+      meta.appendChild(box);
+    }
+    var period = minutes.week || run.period_tag || "—";
+    if (minutes.period_start) {
+      period += " · " + minutes.period_start + " 至 " + (minutes.period_end || "—");
+    }
+    addMeta("周期", period);
+    addMeta("材料", (counts.data || 0) + " 个数据文件 · " + (counts.minutes || 0) + " 份纪要");
+    addMeta("指标", (minutes.metrics || []).join("、"));
+    addMeta("实体", (minutes.entities || []).length + " 个 · 动作项 " + (minutes.actions || 0) + " 条");
+    body.appendChild(meta);
+
+    if (coverage.merged_start || coverage.merged_end) {
+      body.appendChild(el("p", "detail-note",
+        "数据覆盖：" + (coverage.merged_start || "?") + " 至 " + (coverage.merged_end || "?") +
+        (coverage.covers_prompt_scope ? "，覆盖本次周期。" : "，未完全覆盖本次周期。")));
+    }
+
+    var files = intake.files || [];
+    if (files.length) {
+      var fileSec = detailSection("文件");
+      var fileList = el("ul", "detail-list");
+      files.forEach(function (file) {
+        var li = el("li");
+        li.appendChild(el("span", "d-tag", file.role || "文件"));
+        li.appendChild(document.createTextNode(
+          String(file.name || "") + " · " + (file.rows || 0) + " 行" +
+          (file.columns && file.columns.length ? " · " + file.columns.length + " 列" : "")
+        ));
+        fileList.appendChild(li);
+      });
+      fileSec.appendChild(fileList);
+      body.appendChild(fileSec);
+    }
+
+    var requirements = intake.requirements || [];
+    if (requirements.length) {
+      var reqSec = detailSection("需求矩阵");
+      var reqList = el("ul", "detail-list");
+      requirements.forEach(function (req) {
+        var status = req.status === "have" ? "ok" : (req.status === "degrade" ? "warn" : "stop");
+        var li = el("li");
+        li.appendChild(el("span", "d-tag " + status,
+          req.status === "have" ? "有" : (req.status === "degrade" ? "降级" : "缺")));
+        li.appendChild(el("span", "d-tag", req.kind || "项"));
+        li.appendChild(document.createTextNode(String(req.item || "")));
+        if (req.evidence) li.appendChild(el("div", "detail-sub", req.evidence));
+        if (req.impact) li.appendChild(el("div", "detail-sub", "影响：" + req.impact));
+        reqList.appendChild(li);
+      });
+      reqSec.appendChild(reqList);
+      body.appendChild(reqSec);
+    }
+
+    var problems = [];
+    (intake.missing || []).forEach(function (item) {
+      var text = "缺：" + (item.what || "");
+      if (item.impact) text += "；影响：" + item.impact;
+      if (item.how) text += "；处理：" + item.how;
+      problems.push(text);
+    });
+    (intake.degrade || []).forEach(function (item) {
+      problems.push("降级：" + (item.what || "") + (item.note ? "；" + item.note : ""));
+    });
+    var conflicts = (intake.consistency && intake.consistency.conflicts) || [];
+    conflicts.forEach(function (item) {
+      problems.push("冲突（" + (item.kind || "未知") + "）：" + (item.detail || ""));
+    });
+    (intake.questions || []).forEach(function (question) {
+      if (problems.indexOf(question) < 0) problems.push(String(question));
+    });
+
+    if (problems.length) {
+      var problemSec = detailSection("需要核对");
+      var problemList = el("ul", "detail-list");
+      problems.forEach(function (text) {
+        problemList.appendChild(el("li", "", text));
+      });
+      problemSec.appendChild(problemList);
+      body.appendChild(problemSec);
+    } else {
+      body.appendChild(el("p", "detail-note", "没有未解决的冲突或缺口。"));
+    }
+
+    if (intake.next_action) {
+      var next = intake.next_action === "continue"
+        ? "可以进入 S2 拆卡。"
+        : "先处理上面的问题，再重跑 S1。";
+      body.appendChild(el("p", "detail-note", "下一步：" + next));
+    }
+  }
+
+  async function openRunDetail(runId) {
+    if (!runId) return;
+    runDetailTitle.textContent = "S1 · " + String(runId).toUpperCase();
+    runDetailBody.textContent = "正在读取详情…";
+    if (!runDetailDialog.open) runDetailDialog.showModal();
+    try {
+      var resp = await fetch("/api/runs/" + encodeURIComponent(runId));
+      var data = await resp.json();
+      if (!data.intake) throw new Error(data.error || "找不到这次运行");
+      renderRunDetail(data.intake);
+    } catch (err) {
+      runDetailBody.textContent = "读取失败：" + (err.message || err);
+    }
+  }
+
   function appendEvents(events, msg) {
     if (!events || !events.length) return;
     var host = msg.querySelector(".msg-body") || msg;
     var bar = el("div", "events");
     events.forEach(function (ev) {
-      var pill = el("span", "event-pill");
-      var dot = el("span", "event-dot" + (ev.ok ? " ok" : (ev.state ? " bad" : "")));
-      pill.appendChild(dot);
+      var isS1 = ev.tool === "run_s1" && ev.run_id;
+      var pill = el(isS1 ? "button" : "span", "event-pill" + (isS1 ? " event-link" : ""));
+      if (isS1) {
+        pill.type = "button";
+        pill.title = "查看 S1 详情";
+        pill.appendChild(el("span", "event-status " + stateTone(ev.state)));
+      } else {
+        var dot = el("span", "event-dot" + (ev.ok ? " ok" : (ev.state ? " bad" : "")));
+        pill.appendChild(dot);
+      }
       pill.appendChild(document.createTextNode(TOOL_LABELS[ev.tool] || ev.tool || "tool"));
       if (ev.run_id) pill.appendChild(el("span", "event-run", ev.run_id));
-      pill.title = [ev.tool, ev.run_id, ev.state].filter(Boolean).join(" · ");
+      if (isS1) {
+        pill.appendChild(el("span", "event-more", "›"));
+        pill.addEventListener("click", function () { openRunDetail(ev.run_id); });
+      } else {
+        pill.title = [ev.tool, ev.run_id, ev.state].filter(Boolean).join(" · ");
+      }
       bar.appendChild(pill);
     });
     host.appendChild(bar);
@@ -985,6 +1232,11 @@ body.drawer-open{overflow:hidden}
       confirmResolve = null;
       done(ok);
     }
+  });
+
+  runDetailClose.addEventListener("click", function () { runDetailDialog.close(); });
+  runDetailDialog.addEventListener("click", function (event) {
+    if (event.target === runDetailDialog) runDetailDialog.close();
   });
 
   function setBusy(busy) {
