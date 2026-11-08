@@ -634,6 +634,7 @@ body.drawer-open{overflow:hidden}
       </button>
     </header>
     <div class="detail-body" id="s3DetailBody">正在读取…</div>
+    <footer class="detail-foot" id="s3DetailFoot" hidden></footer>
   </section>
 </dialog>
 
@@ -679,6 +680,7 @@ body.drawer-open{overflow:hidden}
   var s3DetailDialog = document.getElementById("s3DetailDialog");
   var s3DetailTitle = document.getElementById("s3DetailTitle");
   var s3DetailBody = document.getElementById("s3DetailBody");
+  var s3DetailFoot = document.getElementById("s3DetailFoot");
   var s3DetailClose = document.getElementById("s3DetailClose");
 
   var LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 17v-4.5M12 17V7M17 17v-7"/></svg>';
@@ -1383,10 +1385,12 @@ body.drawer-open{overflow:hidden}
     return "";
   }
 
-  function renderS3Detail(issues, ledger) {
+  function renderS3Detail(issues, ledger, approval, runId) {
     var body = s3DetailBody;
     body.textContent = "";
     body.scrollTop = 0;
+    s3DetailFoot.textContent = "";
+    s3DetailFoot.hidden = true;
     var state = String(issues.state || "");
     var stats = issues.stats || {};
     var bar = el("div", "detail-state " + s3Tone(state));
@@ -1488,6 +1492,50 @@ body.drawer-open{overflow:hidden}
       body.appendChild(el("p", "detail-note", "没有核对结果。"));
     }
 
+    renderS3Approval(approval || {}, runId);
+  }
+
+  function renderS3Approval(approval, runId) {
+    s3DetailFoot.textContent = "";
+    s3DetailFoot.hidden = true;
+    if (!runId) return;
+    if (approval && approval.approved) {
+      s3DetailFoot.appendChild(el("span", "d-tag ok", "已批准"));
+      var at = String(approval.at || "").replace("T", " ");
+      if (at) s3DetailFoot.appendChild(el("span", "detail-foot-hint", "批准时间：" + at));
+      s3DetailFoot.hidden = false;
+      return;
+    }
+    s3DetailFoot.appendChild(el("span", "detail-foot-hint",
+      "S3 结果需要你确认；批准后才能进入下一步。"));
+    var btn = el("button", "btn btn-primary btn-sm", "批准本次对账");
+    btn.type = "button";
+    btn.addEventListener("click", function () { approveS3(runId, btn); });
+    s3DetailFoot.appendChild(btn);
+    s3DetailFoot.hidden = false;
+  }
+
+  async function approveS3(runId, btn) {
+    btn.disabled = true;
+    btn.textContent = "批准中…";
+    try {
+      var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: "s3", session_id: sessionId || "" })
+      });
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.error || "批准失败");
+      renderS3Approval(data.approval || { approved: true }, runId);
+      if (data.note) appendMessage("assistant", data.note);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "批准本次对账";
+      s3DetailFoot.insertBefore(
+        el("span", "detail-foot-hint", "批准失败：" + (err.message || err)),
+        s3DetailFoot.firstChild
+      );
+    }
   }
 
   async function openS3Detail(runId) {
@@ -1501,7 +1549,7 @@ body.drawer-open{overflow:hidden}
       if (!data.ok || !data.issues || !Object.keys(data.issues).length) {
         throw new Error(data.error || "没有这次对账结果");
       }
-      renderS3Detail(data.issues, data.ledger || {});
+      renderS3Detail(data.issues, data.ledger || {}, data.approval || {}, runId);
     } catch (err) {
       s3DetailBody.textContent = "读取失败：" + (err.message || err);
     }

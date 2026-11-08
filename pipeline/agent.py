@@ -50,9 +50,9 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
     不要自己计算卡片里的数字，也不要替 S2 判断卡片对不对。
 16. 一次只推进一个阶段：调完 run_s1 就报告结果并停下，等用户说「继续」再调 run_s2。
     只有用户明确说「一路做完」「不用问我」时，才允许连续调用。
-17. 当前流水线只实现到 S2。S3 取数、S4 改稿、S5 写正文都还没有接，
+17. 当前流水线实现到 S3。S4 改稿、S5 写正文还没接，
     绝对不要自己写周报正文、章节标题、汇总表格，也不要把卡片原话改写成段落。
-    用户要正文时，直接说明「下一步 S3 取数还没接入，现在给不了正文」。
+    用户要正文时，直接说明「下一步 S4 改稿还没接入，现在给不了正文」。
 18. 转述卡片时字段值照抄：指标、期望、单位、目标值是什么就说什么，
     不要把「具体数值」译成「七成」，也不要从原话里再加工出别的说法。
 19. 顺序是 S1 → S2 → S3。S3 对账要等 S2 拆完卡才能调；S1 没准入、S2 没拆卡时不要跳步。
@@ -60,11 +60,15 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
     （对象、纪要怎么说、数据是多少、建议怎么改）。有阻断时明确说「必须先处理才能往下」，
     不要用「基本一致」「大致吻合」这类话把 mismatch 说轻。
 21. S3 的数字只能照抄工具返回的 display / raw，不要自己再算一遍或换算单位。
-22. 用户对某张卡片的取数口径提出调整（例如「本周不算周六周日」「剔除停业那几天」）时，
+22. S3 出结果后，进入下一步前必须调用 check_approval：
+    approved=false 时，提示用户点 S3 弹窗里的「批准」按钮，不要继续，也不要重复跑 S3；
+    用户说「继续」但还没批准时，同样先提示。
+    只有 approved=true 才能往下走。
+23. 用户对某张卡片的取数口径提出调整（例如「本周不算周六周日」「剔除停业那几天」）时，
     调 recalc_card：card_id 传卡片编号，hint 把用户的口径要求写成一句能被代码执行的说明
     （例如「只统计销售日期为周一至周五的记录，排除周六和周日」）。
     只重算这一张，其他卡片结果保留。不要自己重算数字，也不要改 ledger.json。
-23. 口径说明必须具体到能落成条件（字段 + 判断），不要写「合理一点」「按惯例」这类空话；
+24. 口径说明必须具体到能落成条件（字段 + 判断），不要写「合理一点」「按惯例」这类空话；
     写不出来就问用户要明确的判断条件。
 """
 
@@ -162,6 +166,20 @@ TOOLS = [
                     "reason": {"type": "string", "description": "用户给出的理由原话"},
                 },
                 "required": ["items", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_approval",
+            "description": ("检查本次运行的 S3 结果是否已被用户点击批准。"
+                            "S3 出结果后、进入下一步前必须调用；approved=false 时提示用户先批准。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string", "description": "可选，默认最近一次运行"},
+                },
             },
         },
     },
@@ -427,6 +445,28 @@ class Session:
                     "requirements": intake.get("requirements") or []}
         return {"ok": False, "error": "未知 section：" + section}
 
+    def _check_approval(self, args: dict) -> dict:
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "approved": False,
+                    "error": "还没有运行记录，先跑 S3。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "approved": False,
+                    "error": "找不到运行目录：" + run_id}
+        data = _read_json(folder / "approval.json")
+        approved = bool(data.get("approved"))
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "approved": approved,
+            "stage": data.get("stage") or "",
+            "at": data.get("at") or "",
+            "by": data.get("by") or "",
+            "note": ("" if approved else
+                     "用户还没有批准 S3，请先点 S3 弹窗里的「批准」按钮，再继续。"),
+        }
+
     def _list_runs(self) -> dict:
         """只列本次会话跑出来的运行；别的会话的历史不算。"""
         if not self.run_ids:
@@ -505,6 +545,10 @@ class Session:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": "S3 执行失败：" + str(exc)}
         payload = _summarize_issues(result)
+        approval = _read_json(folder / "approval.json")
+        payload["approved"] = bool(approval.get("approved"))
+        payload["approval_note"] = ("" if payload["approved"] else
+                                    "需要用户点 S3 弹窗里的「批准」按钮后才能进入下一步。")
         payload["log"] = logs[-6:]
         return payload
 
@@ -571,6 +615,8 @@ class Session:
             return self._waive_conflicts(args)
         if name == "get_run":
             return self._get_run(args)
+        if name == "check_approval":
+            return self._check_approval(args)
         if name == "list_runs":
             return self._list_runs()
         return {"ok": False, "error": "未知工具：" + name}
