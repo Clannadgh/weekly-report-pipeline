@@ -255,7 +255,8 @@ def _judge(expect: str, current: float, base: float | None,
 
 # ---------------------------------------------------------------- 主流程
 
-def run_s3(run_dir: str | Path, run_root: str | Path | None = None) -> tuple[IssuesResult, list[str]]:
+def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
+           engine: str = "pandasai") -> tuple[IssuesResult, list[str]]:
     run_dir = Path(run_dir)
     if not run_dir.is_dir() and run_root:
         run_dir = Path(run_root) / run_dir
@@ -297,6 +298,22 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None) -> tuple[Iss
             log.append("按记录ID去重：" + str(before - len(frame)) + " 行重复已剔除")
     log.append("数据 " + source + "，" + str(len(frame)) + " 行")
 
+    qa = None
+    if engine == "pandasai":
+        from .pandasai_glm import make_qa
+
+        qa_frame = frame.copy()
+        store_col = next((str(c) for c in qa_frame.columns
+                          if "门店" in str(c) and "名称" in str(c)), None)
+        if store_col and "_区域" not in qa_frame.columns:
+            qa_frame["_区域"] = qa_frame[store_col].map(
+                lambda name: next((region for city, region in CITY_TO_REGION.items()
+                                   if _norm(name).startswith(city)), ""))
+        qa = make_qa({"df_sales": qa_frame}, cache_dir=run_dir / "cache")
+        from .llm import get_config
+
+        log.append("取数引擎 pandasai（模型 " + get_config().model + "）")
+
     issues: list[IssueItem] = []
     results: list[ResultItem] = []
     stats = ReconcileStats()
@@ -324,37 +341,84 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None) -> tuple[Iss
             continue
 
         mask, column = located
-        entity_frame = frame[mask]
-        if "至" in period:
-            p_start, p_end = [part.strip() for part in period.split("至", 1)]
+        unit = {"实收": "元", "数量": "件", "毛利率": "%",
+                "退货": "笔", "渠道": "%"}.get(metric, str(card.get("unit") or "元"))
+        if expect in ("上升", "下降", "持平"):
+            unit = "%"   # 这三类卡片比的是变化率，不是绝对金额
+
+        qhash = ""
+        code_hash = "内置规则"
+        change = None
+        diff = None
+        ask_flags: list[str] = []
+
+        if qa is not None:
+            qa_column = "_区域" if "推导" in column else column
             try:
-                entity_frame = _slice(entity_frame, date_col, p_start, p_end)
-            except Exception:
-                pass
-        measure = _measure(entity_frame, metric)
-        if measure is None:
+                out = _ask_card(qa, card, qa_column, entity, period, compare)
+            except Exception as exc:  # noqa: BLE001 - 单卡失败不影响其他卡
+                out = {"ok": False, "value": None, "verdict": "unsupported",
+                       "flags": ["call_failed:" + str(exc)[:80]], "raw": "",
+                       "code": "", "question_hash": _qhash(card_id, "call_failed")}
+            ask_flags = [str(flag) for flag in (out.get("flags") or [])]
+            current = out.get("value")
+            verdict = str(out.get("verdict") or "none")
+            diff = out.get("diff")
+            qhash = str(out.get("question_hash") or "")
+            code = str(out.get("code") or "")
+            code_hash = (hashlib.sha256(code.encode("utf-8")).hexdigest()[:16]
+                         if code else "无代码")
+            if out.get("fallback") or verdict == "none":
+                verdict = "unsupported"
+            if any(flag.startswith("reference_unparsed") for flag in ask_flags):
+                verdict = "unsupported"
+            if current is None:
+                verdict = "unsupported"
+            note = ("；".join(flag for flag in ask_flags
+                              if not flag.startswith("import:")))[:120]
+            stats.ok += 1 if out.get("status") != "parse_failed" else 0
+            if out.get("status") == "parse_failed":
+                stats.parse_failed += 1
+        else:
+            entity_frame = frame[mask]
+            if "至" in period:
+                p_start, p_end = [part.strip() for part in period.split("至", 1)]
+                try:
+                    entity_frame = _slice(entity_frame, date_col, p_start, p_end)
+                except Exception:
+                    pass
+            measure = _measure(entity_frame, metric)
+            if measure is None:
+                stats.info += 1
+                issues.append(IssueItem(
+                    id="Q" + str(len(issues) + 1).zfill(2), level="信息", type="caliber",
+                    card=card_id, subject=entity + " " + metric, minutes_said=quote,
+                    raw="", question_hash=_qhash(card_id, entity, metric),
+                    suggest="数据里没有能算「" + metric + "」的列，正文写无数据来源"))
+                continue
+            current, unit = measure
+            base = None
+            if compare and "至" in compare:
+                start, end = [part.strip() for part in compare.split("至", 1)]
+                try:
+                    base_frame = _slice(frame[mask], date_col, start, end)
+                    base_measure = _measure(base_frame, metric)
+                    base = base_measure[0] if base_measure else None
+                except Exception:
+                    base = None
+            target = _parse_target(card.get("target_value"))
+            verdict, diff, change, note = _judge(expect, current, base, target, unit)
+            qhash = _qhash(card_id, entity, metric)
+            stats.ok += 1
+
+        if current is None:
             stats.info += 1
             issues.append(IssueItem(
                 id="Q" + str(len(issues) + 1).zfill(2), level="信息", type="caliber",
                 card=card_id, subject=entity + " " + metric, minutes_said=quote,
-                raw="", question_hash=_qhash(card_id, entity, metric),
-                suggest="数据里没有能算「" + metric + "」的列，正文写无数据来源"))
+                raw="", question_hash=qhash,
+                suggest=("取不到数：" + note) if note else "口径不可得，正文不引用该结论"))
             continue
-        current, unit = measure
-
-        base = None
-        if compare and "至" in compare:
-            start, end = [part.strip() for part in compare.split("至", 1)]
-            try:
-                base_frame = _slice(frame[mask], date_col, start, end)
-                base_measure = _measure(base_frame, metric)
-                base = base_measure[0] if base_measure else None
-            except Exception:
-                base = None
-
-        target = _parse_target(card.get("target_value"))
-        verdict, diff, change, note = _judge(expect, current, base, target, unit)
-        stats.ok += 1
 
         key = "_".join([
             GRAN_ABBR.get(entity_type, "entity"),
@@ -362,7 +426,8 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None) -> tuple[Iss
             METRIC_ABBR.get(metric, "other"),
             result.run_id or "w00",
         ])
-        qhash = _qhash(card_id, entity, metric, period, compare)
+        if not qhash:
+            qhash = _qhash(card_id, entity, metric, period, compare)
 
         ledger.entries.append(LedgerEntry(
             key=key, value=float(current), unit=unit,
@@ -371,7 +436,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None) -> tuple[Iss
                   "时间范围 " + period.replace(" 至 ", " 至 ") + "；"
                   "筛选 " + column + "=" + entity + "；"
                   "口径为" + metric + "求和"),
-            question_hash=qhash, code_hash="内置规则",
+            question_hash=qhash, code_hash=code_hash,
             status="ok", verdict=verdict, diff=diff, shape="number"))
 
         explain = ("数据来自" + source + "；按记录ID保留第一条；时间范围 "
@@ -557,6 +622,78 @@ def _mentioned_entities(cards: list[dict], intake: dict) -> set[str]:
     return names
 
 
+# ---------------------------------------------------------------- pandasai 取数
+
+def _metric_phrase(metric: str) -> str:
+    if metric == "实收":
+        return "实收金额合计"
+    if metric == "数量":
+        return "销售数量合计"
+    if metric == "毛利率":
+        return "毛利率（口径：(实收金额合计 - 成本金额合计) / 实收金额合计）"
+    if metric == "退货":
+        return "退货笔数（实收金额为负数的记录条数）"
+    return metric + "合计"
+
+
+def _build_question(column: str, entity: str, metric: str,
+                    period: str, compare: str, is_change: bool) -> str:
+    start, end = [part.strip() for part in period.split("至", 1)]
+    target = _metric_phrase(metric)
+    if not is_change:
+        return (
+            "用 df_sales，计算 " + start + " 至 " + end
+            + "、筛选 " + column + " 为「" + entity + "」的" + target + "。"
+            "退货按负数直接计入；按记录ID去重保留第一条；结果保留两位小数。"
+            "只输出一个数字，不要单位、不要千分位、不要解释、不要图表。"
+        )
+    c_start, c_end = [part.strip() for part in compare.split("至", 1)]
+    return (
+        "用 df_sales，分别计算 " + c_start + " 至 " + c_end + "（上期）与 "
+        + start + " 至 " + end + "（本期）、筛选 " + column + " 为「" + entity
+        + "」的" + target + "，再算环比变化率 = (本期 - 上期) / 上期。"
+        "退货按负数直接计入；按记录ID去重保留第一条；变化率保留四位小数。"
+        "只输出一个数字（小数形式，例如 -0.1271），不要加百分号、不要说明、不要图表。"
+    )
+
+
+def _build_expected(expect: str, metric: str, unit: str,
+                    target: float | None) -> dict | None:
+    if expect in ("上升", "下降", "持平"):
+        kind = {"上升": "up", "下降": "down", "持平": "flat"}[expect]
+        return {"type": kind, "kind": "change", "tolerance": "ratio_pp:5"}
+    if expect in ("具体数值", "百分比") and target is not None:
+        tolerance = "margin_pp:1" if unit == "%" else "amount:50,0.05"
+        return {"type": "value", "kind": "total", "value": target,
+                "tolerance": tolerance}
+    return None
+
+
+def _ask_card(qa, card: dict, column: str, entity: str,
+              period: str, compare: str) -> dict:
+    """调 pandasai 取一张卡片的数。返回工具的原始结果。"""
+    metric = str(card.get("metric") or "")
+    expect = str(card.get("expect") or "")
+    unit = str(card.get("unit") or "元")
+    target = _parse_target(card.get("target_value"))
+    is_change = expect in ("上升", "下降", "持平")
+
+    question = _build_question(column, entity, metric, period, compare, is_change)
+    expected = _build_expected(expect, metric, unit, target)
+    reference: float | str | None = None
+    if expect in ("具体数值", "百分比") and card.get("target_value"):
+        reference = str(card.get("target_value"))
+
+    kwargs: dict = {"expect_shape": "number", "use_cache": False}
+    if expected is not None:
+        kwargs["expected"] = expected
+    if reference is not None:
+        kwargs["reference"] = reference
+    out = qa.ask(question, **kwargs)
+    out["question"] = question
+    return out
+
+
 def _write(run_dir: Path, result: IssuesResult, ledger: Ledger) -> None:
     (run_dir / "issues.json").write_text(
         json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2),
@@ -571,10 +708,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", required=True, help="运行目录，如 runs/w44")
     parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--engine", choices=("pandasai", "builtin"), default="pandasai",
+                        help="取数引擎：pandasai（默认）或内置规则")
     args = parser.parse_args(argv)
 
     try:
-        result, log = run_s3(args.run, args.run_root)
+        result, log = run_s3(args.run, args.run_root, engine=args.engine)
     except FileNotFoundError as exc:
         print(json.dumps({"state": "blocked", "message": str(exc)}, ensure_ascii=False))
         return 1

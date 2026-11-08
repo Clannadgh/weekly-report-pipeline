@@ -20,6 +20,8 @@ cp .env.example .env        # 填入 GLM_API_KEY
 | `pipeline/s1_intake.py` | S1 准入检查：清点、判角色、抽周期与需求、对账、判定、落盘 |
 | `pipeline/domain_map.py` | 用 GLM 把纪要里的指标/实体映射到数据列，按输入哈希落盘冻结 |
 | `pipeline/s2_cards.py` | S2 纪要拆卡：切句、拆卡、抽动作与未来事项，落盘 `cards.json` |
+| `pipeline/s3_reconcile.py` | S3 数据对账：取数、判容差、出问题清单与台账，落盘 `issues.json` / `ledger.json` |
+| `pipeline/pandasai_glm.py` | 让 pandasai 的 OpenAI 适配器指向 GLM（补模型白名单 + api_base） |
 | `pipeline/agent.py` | 主 agent：对话 + 工具调用，不计算、不改判定 |
 | `pipeline/llm.py` | 智谱 GLM 客户端（OpenAI 兼容，仅标准库） |
 | `web/server.py` | 本地 HTTP 服务（仅标准库） |
@@ -38,7 +40,7 @@ cp .env.example .env        # 填入 GLM_API_KEY
 
 - [x] S1 准入检查（代码判定 + AI 指标映射）
 - [x] S2 纪要拆卡（模型读句拆卡 + 代码校验原话与枚举）
-- [ ] S3 数据对账
+- [x] S3 数据对账（pandasai 生成代码取数 + 容差判定 + 台账）
 - [ ] S4 修纪要底稿
 - [ ] S5 扩写出图
 - [ ] S6 质检替换

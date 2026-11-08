@@ -370,7 +370,7 @@
 <body>
 <header class="topbar">
   <h1>经营周报 · 第三步 数据对账</h1>
-  <p>拿 S2 的卡片去数据里取数，判对错。本步不调用模型，所有数字由内置规则算出，同输入同结果。</p>
+  <p>拿 S2 的卡片去数据里取数，判对错。取数由 pandasai 生成代码执行，判对错按容差表，原始代码哈希写进台账。</p>
   <div class="headlink">
     <a href="/">第一步 准入</a>
     <a href="/s2.html">第二步 拆卡</a>
@@ -396,10 +396,10 @@
 
     <div class="llm-card">
       <div class="llm-head">
-        <span class="dot ok"></span>
-        <span>本步<b>不调用模型</b></span>
+        <span class="dot idle" id="engineDot"></span>
+        <span>取数引擎 <b id="engineName">pandasai</b></span>
       </div>
-      <p class="empty-note">取数逻辑写死在 pipeline/s3_reconcile.py，台账记「内置规则」。</p>
+      <p class="empty-note" id="engineNote">pandasai 生成代码取数，每张卡一次调用；台账记代码哈希，失败记「无代码」。</p>
     </div>
   </section>
 
@@ -713,6 +713,22 @@
     var text = document.getElementById("rawJson").textContent;
     if (navigator.clipboard) navigator.clipboard.writeText(text);
   });
+
+  fetch("/api/llm")
+    .then(function (resp) { return resp.json(); })
+    .then(function (data) {
+      document.getElementById("engineName").textContent = data.model || "未配置";
+      if (data.configured) {
+        document.getElementById("engineDot").className = "dot ok";
+        document.getElementById("engineNote").textContent =
+          "pandasai 生成代码取数，每张卡一次调用；台账记代码哈希，失败记「无代码」。";
+      } else {
+        document.getElementById("engineDot").className = "dot bad";
+        document.getElementById("engineNote").textContent =
+          "未找到 GLM_API_KEY，取数会失败；可改用内置规则引擎。";
+      }
+    })
+    .catch(function () {});
 
   loadRuns();
 })();

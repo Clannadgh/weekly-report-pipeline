@@ -641,7 +641,7 @@ class Handler(BaseHTTPRequestHandler):
             from pipeline.s3_reconcile import run_s3
 
             log("S3 开始：" + folder)
-            result, logs = run_s3(folder)
+            result, logs = run_s3(folder, engine=str(payload.get("engine") or "pandasai"))
         except FileNotFoundError as exc:
             self.send_error_json(404, "前置文件缺失", str(exc))
             return
