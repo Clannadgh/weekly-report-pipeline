@@ -1422,6 +1422,18 @@ body.drawer-open{overflow:hidden}
     });
 
     var issueList = issues.issues || [];
+    var checked = Number(stats.checked) || 0;
+    var issueCards = {};
+    issueList.forEach(function (item) {
+      if (item.card) issueCards[item.card] = true;
+    });
+    var matched = Math.max(checked - Object.keys(issueCards).length, 0);
+    if (checked && matched > 0) {
+      body.appendChild(el("p", "detail-note",
+        "已核对 " + checked + " 张卡片；其中 " + matched +
+        " 张匹配，未列入问题清单。问题清单只列有问题的卡片。"));
+    }
+
     if (issueList.length) {
       var issueSec = detailSection("问题清单");
       var issueUl = el("ul", "detail-list");
