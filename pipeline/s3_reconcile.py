@@ -75,11 +75,37 @@ def _display(value: float, unit: str) -> str:
     return str(round(value, 4))
 
 
+CN_DIGITS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+             "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+
+def _cn_number(text: str) -> float | None:
+    text = _norm(text)
+    if not text:
+        return None
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):
+        return float(text)
+    if text in CN_DIGITS:
+        return float(CN_DIGITS[text])
+    if len(text) == 2 and text[0] == "十" and text[1] in CN_DIGITS:
+        return float(10 + CN_DIGITS[text[1]])
+    if len(text) == 2 and text[0] in CN_DIGITS and text[1] == "十":
+        return float(CN_DIGITS[text[0]] * 10)
+    return None
+
+
 def _parse_target(text: str | None) -> float | None:
     """把纪要原句里的目标值规约成浮点。规约不了返回 None，不猜。"""
     if not text:
         return None
     s = _norm(text)
+    match = re.search(r"([0-9一二三四五六七八九十]+(?:\.[0-9]+)?)成", s)
+    if match:
+        value = _cn_number(match.group(1))
+        return value / 10 if value is not None else None
+    match = re.search(r"([0-9一二三四五六七八九十]+(?:\.[0-9]+)?)倍", s)
+    if match:
+        return _cn_number(match.group(1))
     match = re.search(r"(-?\d+(?:\.\d+)?)万元", s)
     if match:
         return float(match.group(1)) * 10000
@@ -353,7 +379,23 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         diff = None
         ask_flags: list[str] = []
 
-        if qa is not None:
+        ratio_card = (_parse_ratio_quote(quote)
+                      if expect in ("具体数值", "百分比") else None)
+        if ratio_card is not None:
+            value, target_ratio, note = _builtin_ratio(frame, date_col, quote, period)
+            current = value
+            verdict = "unsupported"
+            if value is not None and target_ratio is not None:
+                diff = value - target_ratio
+                verdict = "match" if abs(diff) <= TOL_RATIO else "mismatch"
+                change = diff
+            else:
+                diff = None
+            unit = "倍"
+            qhash = _qhash(card_id, "ratio", quote)
+            code_hash = "内置规则"
+            stats.ok += 1
+        elif qa is not None:
             qa_column = "_区域" if "推导" in column else column
             try:
                 out = _ask_card(qa, card, qa_column, entity, period, compare)
@@ -442,10 +484,11 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                          if note else "口径不可得，正文不引用该结论")))
             continue
 
+        key_metric = "ratio" if ratio_card is not None else METRIC_ABBR.get(metric, "other")
         key = "_".join([
             GRAN_ABBR.get(entity_type, "entity"),
             _slug(entity),
-            METRIC_ABBR.get(metric, "other"),
+            key_metric,
             result.run_id or "w00",
         ])
         if not qhash:
@@ -461,12 +504,20 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
             question_hash=qhash, code_hash=code_hash,
             status="ok", verdict=verdict, diff=diff, shape="number"))
 
-        explain = ("数据来自" + source + "；按记录ID保留第一条；时间范围 "
-                   + period + "；筛选 " + column + " 为 " + entity
-                   + "；口径为" + metric + "求和；结果 " + _display(current, unit)
-                   + ("" if unit == "%" else " " + unit) + "。")
-        raw_text = (_display(change, "%") if change is not None
-                    else _display(current, unit))
+        if ratio_card is not None:
+            left_name, right_name = ratio_card[0], ratio_card[1]
+            explain = ("数据来自" + source + "；按记录ID保留第一条；时间范围 "
+                       + period + "；筛选 门店名称 为「" + left_name + "」与「"
+                       + right_name + "」；口径为日均实收金额之比（合计 / 有销售记录天数）；结果 "
+                       + _display(current, "倍") + " 倍。")
+            raw_text = _display(current, "倍") + " 倍"
+        else:
+            explain = ("数据来自" + source + "；按记录ID保留第一条；时间范围 "
+                       + period + "；筛选 " + column + " 为 " + entity
+                       + "；口径为" + metric + "求和；结果 " + _display(current, unit)
+                       + ("" if unit == "%" else " " + unit) + "。")
+            raw_text = (_display(change, "%") if change is not None
+                        else _display(current, unit))
         results.append(ResultItem(card=card_id, subject=entity + " " + metric,
                                   raw=raw_text, explain=explain,
                                   value=float(current), question_hash=qhash))
@@ -563,6 +614,55 @@ def _coverage(intake: dict, ledger: Ledger) -> list[dict]:
 
 # ---------------------------------------------------------------- pandasai 取数
 
+STORE_RE = re.compile(r"([\u4e00-\u9fa5]{2,10}店)")
+RATIO_VALUE_RE = re.compile(r"([0-9一二三四五六七八九十]+(?:\.[0-9]+)?)\s*(成|倍|%)")
+BAD_PREFIX = ("日均", "销售", "实收", "销售额", "约为", "是", "的", "达到",
+              "相当于", "同期", "本周", "上周", "当月")
+
+
+def _clean_store(name: str) -> str:
+    """把「日均销售约为春熙路店」修成「春熙路店」。"""
+    changed = True
+    while changed:
+        changed = False
+        for bad in BAD_PREFIX:
+            if name.startswith(bad) and len(name) - len(bad) >= 3:
+                name = name[len(bad):]
+                changed = True
+    return name
+
+
+def _parse_ratio_quote(quote: str) -> tuple[str, str, float] | None:
+    """识别「A 约为 B 的 N 成/倍/%」，返回 (A, B, 比值)。
+
+    只处理一句话里出现两个「…店」的情况；识别不出返回 None。
+    """
+    if not quote:
+        return None
+    if not re.search(r"约为|是|相当于|达到", quote):
+        return None
+    stores = [_clean_store(name) for name in STORE_RE.findall(_norm(quote))]
+    stores = [name for name in stores if len(name) >= 3 and name.endswith("店")]
+    if len(stores) < 2:
+        return None
+    value_match = RATIO_VALUE_RE.search(_norm(quote))
+    if not value_match:
+        return None
+    number = _cn_number(value_match.group(1))
+    if number is None:
+        return None
+    unit = value_match.group(2)
+    if unit == "成":
+        ratio = number / 10
+    elif unit == "%":
+        ratio = number / 100
+    else:
+        ratio = number
+    if not 0 < ratio < 10:
+        return None
+    return stores[0], stores[1], ratio
+
+
 def _metric_phrase(metric: str) -> str:
     if metric == "实收":
         return "实收金额合计"
@@ -585,6 +685,7 @@ def _build_question(column: str, entity: str, metric: str,
             + "、筛选 " + column + " 为「" + entity + "」的" + target + "。"
             "退货按负数直接计入；按记录ID去重保留第一条；结果保留两位小数。"
             "只输出一个数字，不要单位、不要千分位、不要解释、不要图表。"
+            "必须把最终数值赋值给变量 result。"
         )
     c_start, c_end = [part.strip() for part in compare.split("至", 1)]
     return (
@@ -593,6 +694,69 @@ def _build_question(column: str, entity: str, metric: str,
         + "」的" + target + "，再算环比变化率 = (本期 - 上期) / 上期。"
         "退货按负数直接计入；按记录ID去重保留第一条；变化率保留四位小数。"
         "只输出一个数字（小数形式，例如 -0.1271），不要加百分号、不要说明、不要图表。"
+        "必须把最终数值赋值给变量 result。"
+    )
+
+
+def _builtin_ratio(frame: pd.DataFrame, date_col: str, quote: str,
+                   period: str) -> tuple[float | None, float | None, str]:
+    """算「A 约为 B 的 N 成」：返回 (实际比值, 目标比值, 说明)。
+
+    逻辑固定：日均 = 区间实收合计 / 该店有销售记录的天数，比值 = A 日均 / B 日均。
+    不走模型，避免多步问题被模型直接答成一句话。
+    """
+    parsed = _parse_ratio_quote(quote)
+    if parsed is None:
+        return None, None, "比值句式识别失败"
+    left, right, target = parsed
+    if "至" not in period:
+        return None, target, "周期缺失"
+    start, end = [part.strip() for part in period.split("至", 1)]
+
+    store_col = next((str(c) for c in frame.columns
+                      if "门店" in str(c) and "名称" in str(c)), None)
+    amount_col = next((str(c) for c in frame.columns
+                       if "实收" in str(c) or "销售额" in str(c)), None)
+    if not store_col or not amount_col:
+        return None, target, "缺门店名称或实收列"
+
+    dates = pd.to_datetime(frame[date_col], errors="coerce")
+    window = frame[(dates >= pd.Timestamp(start)) & (dates <= pd.Timestamp(end))]
+    if window.empty:
+        return None, target, "周期内没有记录"
+
+    def daily(name: str) -> float | None:
+        target = _norm(name)
+        rows = window[window[store_col].map(
+            lambda value: target == _norm(value) or target in _norm(value))]
+        if rows.empty:
+            return None
+        days = pd.to_datetime(rows[date_col], errors="coerce").dt.date.nunique()
+        if not days:
+            return None
+        return float(rows[amount_col].sum()) / float(days)
+
+    left_daily = daily(left)
+    right_daily = daily(right)
+    if left_daily is None:
+        return None, target, "数据里没有「" + left + "」的记录"
+    if right_daily in (None, 0):
+        return None, target, "数据里没有「" + right + "」的记录"
+    return left_daily / right_daily, target, ""
+
+
+def _build_ratio_question(a: str, b: str, metric: str, period: str) -> str:
+    """「A 约为 B 的 N 成」这种句子要算比值，不是单实体合计。"""
+    start, end = [part.strip() for part in period.split("至", 1)]
+    base = {"实收": "日均实收金额", "数量": "日均销售数量",
+            "毛利率": "毛利率"}.get(metric, "日均" + metric)
+    return (
+        "用 df_sales，取 " + start + " 至 " + end + " 区间，按以下三步计算：\n"
+        "1. 筛出门店名称等于「" + a + "」的记录，求实收金额合计，再除以该门店有销售记录的天数，得到 A；\n"
+        "2. 筛出门店名称等于「" + b + "」的记录，求实收金额合计，再除以该门店有销售记录的天数，得到 B；\n"
+        "3. 计算 result = A / B，保留四位小数。\n"
+        "按记录ID去重保留第一条。必须把最终数值赋值给变量 result，不要 print，不要只写表达式。"
+        "只输出一个数字（例如 0.7000），不要百分号、不要解释、不要图表。"
     )
 
 
@@ -617,11 +781,19 @@ def _ask_card(qa, card: dict, column: str, entity: str,
     target = _parse_target(card.get("target_value"))
     is_change = expect in ("上升", "下降", "持平")
 
-    question = _build_question(column, entity, metric, period, compare, is_change)
-    expected = _build_expected(expect, metric, unit, target)
-    reference: float | str | None = None
-    if expect in ("具体数值", "百分比") and card.get("target_value"):
-        reference = str(card.get("target_value"))
+    ratio = (_parse_ratio_quote(str(card.get("quote") or ""))
+             if expect in ("具体数值", "百分比") else None)
+    if ratio is not None:
+        left, right, value = ratio
+        question = _build_ratio_question(left, right, metric, period)
+        expected = {"type": "ratio", "value": value, "tolerance": "ratio_pp:5"}
+        reference = value
+    else:
+        question = _build_question(column, entity, metric, period, compare, is_change)
+        expected = _build_expected(expect, metric, unit, target)
+        reference = None
+        if expect in ("具体数值", "百分比") and card.get("target_value"):
+            reference = str(card.get("target_value"))
 
     kwargs: dict = {"expect_shape": "number", "use_cache": False}
     if expected is not None:
