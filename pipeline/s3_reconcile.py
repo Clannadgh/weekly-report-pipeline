@@ -382,6 +382,8 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         ratio_card = (_parse_ratio_quote(quote)
                       if expect in ("具体数值", "百分比") else None)
         if ratio_card is not None:
+            unit = "倍"
+        if ratio_card is not None and qa is None:
             value, target_ratio, note = _builtin_ratio(frame, date_col, quote, period)
             current = value
             verdict = "unsupported"
@@ -677,86 +679,37 @@ def _metric_phrase(metric: str) -> str:
 
 def _build_question(column: str, entity: str, metric: str,
                     period: str, compare: str, is_change: bool) -> str:
-    start, end = [part.strip() for part in period.split("至", 1)]
-    target = _metric_phrase(metric)
+    start_date, end_date = [part.strip() for part in period.split("至", 1)]
+    base = _metric_phrase(metric)
     if not is_change:
         return (
-            "用 df_sales，计算 " + start + " 至 " + end
-            + "、筛选 " + column + " 为「" + entity + "」的" + target + "。"
+            "用 df，筛选 销售日期 在 " + start_date + " 至 " + end_date + "、"
+            + column + " 为「" + entity + "」的记录，计算" + base + "。"
             "退货按负数直接计入；按记录ID去重保留第一条；结果保留两位小数。"
-            "只输出一个数字，不要单位、不要千分位、不要解释、不要图表。"
-            "必须把最终数值赋值给变量 result。"
+            "最后一行必须是 result = {'type': 'number', 'value': 数值}，"
+            "value 里是纯数字，不要字符串、不要单位、不要千分位。"
         )
     c_start, c_end = [part.strip() for part in compare.split("至", 1)]
     return (
-        "用 df_sales，分别计算 " + c_start + " 至 " + c_end + "（上期）与 "
-        + start + " 至 " + end + "（本期）、筛选 " + column + " 为「" + entity
-        + "」的" + target + "，再算环比变化率 = (本期 - 上期) / 上期。"
-        "退货按负数直接计入；按记录ID去重保留第一条；变化率保留四位小数。"
-        "只输出一个数字（小数形式，例如 -0.1271），不要加百分号、不要说明、不要图表。"
-        "必须把最终数值赋值给变量 result。"
+        "用 df，分别算 " + c_start + " 至 " + c_end + "（上期）与 "
+        + start_date + " 至 " + end_date + "（本期），"
+        + column + " 为「" + entity + "」的" + base + "，"
+        "再算 (本期 - 上期) / 上期。"
+        "退货按负数直接计入；按记录ID去重保留第一条。"
+        "最后一行必须是 result = {'type': 'number', 'value': round(变化率, 4)}，"
+        "value 是小数（例如 -0.1271），不要百分号、不要字符串。"
     )
 
 
-def _builtin_ratio(frame: pd.DataFrame, date_col: str, quote: str,
-                   period: str) -> tuple[float | None, float | None, str]:
-    """算「A 约为 B 的 N 成」：返回 (实际比值, 目标比值, 说明)。
-
-    逻辑固定：日均 = 区间实收合计 / 该店有销售记录的天数，比值 = A 日均 / B 日均。
-    不走模型，避免多步问题被模型直接答成一句话。
-    """
-    parsed = _parse_ratio_quote(quote)
-    if parsed is None:
-        return None, None, "比值句式识别失败"
-    left, right, target = parsed
-    if "至" not in period:
-        return None, target, "周期缺失"
-    start, end = [part.strip() for part in period.split("至", 1)]
-
-    store_col = next((str(c) for c in frame.columns
-                      if "门店" in str(c) and "名称" in str(c)), None)
-    amount_col = next((str(c) for c in frame.columns
-                       if "实收" in str(c) or "销售额" in str(c)), None)
-    if not store_col or not amount_col:
-        return None, target, "缺门店名称或实收列"
-
-    dates = pd.to_datetime(frame[date_col], errors="coerce")
-    window = frame[(dates >= pd.Timestamp(start)) & (dates <= pd.Timestamp(end))]
-    if window.empty:
-        return None, target, "周期内没有记录"
-
-    def daily(name: str) -> float | None:
-        target = _norm(name)
-        rows = window[window[store_col].map(
-            lambda value: target == _norm(value) or target in _norm(value))]
-        if rows.empty:
-            return None
-        days = pd.to_datetime(rows[date_col], errors="coerce").dt.date.nunique()
-        if not days:
-            return None
-        return float(rows[amount_col].sum()) / float(days)
-
-    left_daily = daily(left)
-    right_daily = daily(right)
-    if left_daily is None:
-        return None, target, "数据里没有「" + left + "」的记录"
-    if right_daily in (None, 0):
-        return None, target, "数据里没有「" + right + "」的记录"
-    return left_daily / right_daily, target, ""
-
-
 def _build_ratio_question(a: str, b: str, metric: str, period: str) -> str:
-    """「A 约为 B 的 N 成」这种句子要算比值，不是单实体合计。"""
-    start, end = [part.strip() for part in period.split("至", 1)]
-    base = {"实收": "日均实收金额", "数量": "日均销售数量",
-            "毛利率": "毛利率"}.get(metric, "日均" + metric)
+    """「A 约为 B 的 N 成」：让 pandasai 算两个门店日均之比。"""
+    start_date, end_date = [part.strip() for part in period.split("至", 1)]
     return (
-        "用 df_sales，取 " + start + " 至 " + end + " 区间，按以下三步计算：\n"
-        "1. 筛出门店名称等于「" + a + "」的记录，求实收金额合计，再除以该门店有销售记录的天数，得到 A；\n"
-        "2. 筛出门店名称等于「" + b + "」的记录，求实收金额合计，再除以该门店有销售记录的天数，得到 B；\n"
-        "3. 计算 result = A / B，保留四位小数。\n"
-        "按记录ID去重保留第一条。必须把最终数值赋值给变量 result，不要 print，不要只写表达式。"
-        "只输出一个数字（例如 0.7000），不要百分号、不要解释、不要图表。"
+        "用 df，筛选 销售日期 在 " + start_date + " 至 " + end_date + " 的记录。"
+        "实收金额合计（门店名称 包含「" + a + "」）除以 7 得到 A；"
+        "实收金额合计（门店名称 包含「" + b + "」）除以 7 得到 B；"
+        "最后一行必须是 result = {'type': 'number', 'value': round(A / B, 4)}，"
+        "value 里是纯数字，不要字符串、不要单位。"
     )
 
 
