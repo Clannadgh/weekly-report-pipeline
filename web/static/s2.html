@@ -590,6 +590,9 @@
           runSelect.appendChild(opt);
         });
         var target = selectId || (current && current.run_id) || allRuns[0].run_id;
+        if (!allRuns.some(function (run) { return run.run_id === target; })) {
+          target = allRuns[0].run_id;
+        }
         runSelect.value = target;
         onSelect();
         renderHistory();
@@ -778,7 +781,11 @@
       .finally(function () { llmBtn.disabled = false; });
   });
 
-  loadRuns();
+  var initialRun = "";
+  try {
+    initialRun = new URLSearchParams(window.location.search).get("run") || "";
+  } catch (e) {}
+  loadRuns(initialRun);
 })();
 </script>
 </body>

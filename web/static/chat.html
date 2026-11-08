@@ -67,6 +67,7 @@
 .pipeline-name{font-size:12.5px;font-weight:600;line-height:1.4;color:var(--ink-2);white-space:nowrap}
 .pipeline-node.pending .pipeline-name{font-weight:500;color:var(--muted)}
 .pipeline-meta{margin-top:1px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:break-word}
+.pipeline-open{margin-top:3px;font-size:11px;color:var(--accent)}
 .pipeline-node.clickable{cursor:pointer}
 .pipeline-node.clickable:hover .pipeline-name{color:var(--accent)}
 .pipeline-override{
@@ -426,6 +427,7 @@ body.drawer-open{overflow:hidden}
   .pipeline-dot{width:14px;height:14px;margin:0}
   .pipeline-name{font-size:11.5px}
   .pipeline-meta{display:none}
+  .pipeline-open{display:none}
   .pipeline-override{margin:0 0 0 2px;padding:1px 6px;font-size:10.5px}
   .chat-main{flex:1;min-height:0}
 }
@@ -725,6 +727,23 @@ body.drawer-open{overflow:hidden}
           });
           text.appendChild(btn);
         }
+      }
+      if ((stage.key === "s2" || stage.key === "s3") && data && data.run) {
+        var page = stage.key === "s2" ? "/s2.html" : "/s3.html";
+        li.classList.add("clickable");
+        li.setAttribute("role", "link");
+        li.setAttribute("tabindex", "0");
+        var openStage = function () {
+          window.open(page + "?run=" + encodeURIComponent(data.run), "_blank", "noopener");
+        };
+        li.addEventListener("click", openStage);
+        li.addEventListener("keydown", function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openStage();
+          }
+        });
+        text.appendChild(el("div", "pipeline-open", "查看详细 →"));
       }
       li.appendChild(text);
       pipelineList.appendChild(li);
