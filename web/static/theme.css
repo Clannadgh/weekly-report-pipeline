@@ -1,0 +1,174 @@
+/* ============================================================
+   经营周报 · 共享视觉层
+   底座：DaisyUI 5（本地 vendor，不依赖 CDN）
+   这一层只放 token、基础排版和通用控件，页面级布局留在各页面
+   ============================================================ */
+
+:root,
+[data-theme="weekly"] {
+  color-scheme: light;
+
+  /* 基础色：暖白纸面 */
+  --bg: #f7f5f2;
+  --surface: #fffefc;
+  --surface-muted: #f5f3ee;
+  --ink: #1e1c19;
+  --ink-2: #49443d;
+  --muted: #7b746a;
+
+  /* 线框 */
+  --line: #e7e2d9;
+  --line-strong: #d5cec2;
+
+  /* 强调色：靛蓝 */
+  --accent: #4f5bd6;
+  --accent-hover: #414cbe;
+  --accent-soft: #eef0fc;
+  --accent-ink: #333a9f;
+
+  /* 状态色 */
+  --ok: #2c7a53;
+  --ok-soft: #e8f4ec;
+  --warn: #a06a12;
+  --warn-soft: #fbf1dc;
+  --danger: #b03a30;
+  --danger-soft: #fcecea;
+
+  /* 形状与阴影 */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(30, 28, 25, .05);
+  --shadow: 0 12px 32px -16px rgba(30, 28, 25, .18);
+
+  /* 字体与动效 */
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  --ease: cubic-bezier(.2, .7, .3, 1);
+
+  /* DaisyUI 主题变量：覆盖默认蓝紫，换成同一套暖色 */
+  --color-base-100: #fffefc;
+  --color-base-200: #f5f3ee;
+  --color-base-300: #e7e2d9;
+  --color-base-content: #1e1c19;
+  --color-primary: #4f5bd6;
+  --color-primary-content: #ffffff;
+  --color-secondary: #7b746a;
+  --color-secondary-content: #ffffff;
+  --color-accent: #4f5bd6;
+  --color-accent-content: #ffffff;
+  --color-neutral: #2b2823;
+  --color-neutral-content: #f7f5f2;
+  --color-info: #3f6fb5;
+  --color-info-content: #ffffff;
+  --color-success: #2c7a53;
+  --color-success-content: #ffffff;
+  --color-warning: #a06a12;
+  --color-warning-content: #ffffff;
+  --color-error: #b03a30;
+  --color-error-content: #ffffff;
+
+  --radius-selector: .5rem;
+  --radius-field: .5rem;
+  --radius-box: .75rem;
+  --size-selector: .25rem;
+  --size-field: .25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 14.5px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+svg { display: block; }
+::selection { background: var(--accent-soft); color: var(--accent-ink); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 细滚动条，避免默认灰条打断暖色 */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 通用工具 ---------- */
+.hidden { display: none !important; }
+[hidden] { display: none !important; }
+.icon { width: 16px; height: 16px; flex: none; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+kbd {
+  font-family: var(--font);
+  font-size: 10.5px;
+  line-height: 1.4;
+  padding: 1px 5px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
+/* ---------- DaisyUI 控件的轻量校准 ---------- */
+.btn {
+  --size: 2.25rem;
+  --btn-p: .875rem;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  text-shadow: none;
+  transition: background-color .16s var(--ease), border-color .16s var(--ease), color .16s var(--ease), transform .16s var(--ease);
+}
+.btn:active { transform: translateY(1px); }
+.btn-ghost { color: var(--ink-2); }
+.btn-ghost:hover { background: var(--surface-muted); color: var(--ink); }
+.btn-primary { box-shadow: none; }
+
+.badge {
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 999px;
+  padding-inline: .5rem;
+}
+
+/* 动效克制：只保留必要的位移与淡入 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .step.active .dot { animation: none !important; background: var(--accent) !important; }
+}

@@ -10,7 +10,7 @@ import json
 import uuid
 from pathlib import Path
 
-from .llm import chat
+from .llm import chat, chat_stream
 from .s1_intake import STEPS, run_intake
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -559,21 +559,38 @@ class Session:
         return {"ok": False, "error": "未知工具：" + name}
 
     # -- 对话 --------------------------------------------------------------
-    def send(self, text: str) -> dict:
+    def _stream_round(self, on_event) -> dict:
+        """跑一轮流式 LLM，把 reasoning/content 实时抛给回调，返回最终结果。"""
+        final = None
+        for event in chat_stream(self.messages, temperature=0.2, max_tokens=8192,
+                                 tools=TOOLS, timeout=180):
+            if event.get("type") == "final":
+                final = event.get("data") or {}
+            else:
+                on_event(event)
+        if final is None:
+            raise RuntimeError("流式返回缺少最终结果")
+        return final
+
+    def send(self, text: str, on_event=None) -> dict:
         self.thoughts = []
         self.progress = {"started": False, "finished": False, "current": -1,
                          "detail": "", "steps": list(STEPS),
                          "states": ["pending"] * len(STEPS)}
         text = (text or "").strip()
         if not text:
+            self.progress["finished"] = True
             return {"reply": "请说说你想做什么。", "events": [], "run_id": self.last_run}
         self.messages[0] = {"role": "system", "content": SYSTEM + self._files_note()}
         self.messages.append({"role": "user", "content": text})
         events: list[dict] = []
 
         for _ in range(6):
-            out = chat(self.messages, temperature=0.2, max_tokens=8192,
-                       tools=TOOLS, timeout=180)
+            if on_event is None:
+                out = chat(self.messages, temperature=0.2, max_tokens=8192,
+                           tools=TOOLS, timeout=180)
+            else:
+                out = self._stream_round(on_event)
             reasoning = (out.get("reasoning") or "").strip()
             if reasoning:
                 self.thoughts.append(reasoning[:2000])
@@ -584,6 +601,7 @@ class Session:
                 if not reply:
                     reply = "模型没有返回内容，请稍后再试。"
                 self.messages.append({"role": "assistant", "content": reply})
+                self.progress["finished"] = True
                 self.save()
                 return {"reply": reply, "events": events, "run_id": self.last_run,
                         "thoughts": list(self.thoughts)}
@@ -591,6 +609,9 @@ class Session:
             self.messages.append({"role": "assistant",
                                   "content": message.get("content") or "",
                                   "tool_calls": calls})
+            if on_event is not None:
+                # 这一轮只是决定调工具，前面流出的正文不是最终回答
+                on_event({"type": "content_reset"})
             for call in calls:
                 function = call.get("function") or {}
                 name = function.get("name") or ""
@@ -611,6 +632,7 @@ class Session:
                     "content": json.dumps(result, ensure_ascii=False),
                 })
 
+        self.progress["finished"] = True
         self.save()
         return {"reply": "工具调用轮次过多，先停在这里。请把问题说得更具体一些。",
                 "events": events, "run_id": self.last_run,

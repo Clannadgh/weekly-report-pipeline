@@ -23,6 +23,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -35,6 +36,13 @@ from urllib.parse import unquote, urlparse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(ROOT, "web", "static")
 INDEX_HTML = os.path.join(STATIC_DIR, "index.html")
+ASSET_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".woff2": "font/woff2",
+    ".png": "image/png",
+}
 RUNS_DIR = os.path.join(ROOT, "runs")
 UPLOAD_ROOT = os.path.join(RUNS_DIR, "_uploads")
 CHAT_ROOT = os.path.join(RUNS_DIR, "_chat")
@@ -484,6 +492,20 @@ class Handler(BaseHTTPRequestHandler):
     def send_error_json(self, code: int, error: str, detail: str = "") -> None:
         self.send_json({"ok": False, "error": error, "detail": detail}, code)
 
+    def send_stream_headers(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+    def write_sse(self, payload: dict) -> None:
+        body = "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+        self.wfile.write(body.encode("utf-8"))
+        self.wfile.flush()
+
     def log_message(self, fmt: str, *args: Any) -> None:  # 只留一行，别刷屏
         log("%s %s" % (self.address_string(), fmt % args))
 
@@ -499,6 +521,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.serve_static("s2.html")
             elif path in ("/s3", "/s3.html"):
                 self.serve_static("s3.html")
+            elif path.startswith("/static/"):
+                self.serve_asset(path[len("/static/"):])
             elif path == "/api/s3/runs":
                 self.send_json({"ok": True, "runs": list_s3_runs()})
             elif path.startswith("/api/s3/"):
@@ -549,6 +573,23 @@ class Handler(BaseHTTPRequestHandler):
         with open(target, "rb") as handle:
             body = handle.read()
         self._send(200, body, "text/html; charset=utf-8")
+
+    def serve_asset(self, name: str) -> None:
+        """静态资源：只允许白名单扩展名，且必须落在 static 目录内。"""
+        name = unquote(name)
+        ext = os.path.splitext(name)[1].lower()
+        root = os.path.realpath(STATIC_DIR)
+        target = os.path.realpath(os.path.join(STATIC_DIR, name))
+        try:
+            inside = os.path.commonpath([root, target]) == root
+        except ValueError:
+            inside = False
+        if not name or not inside or ext not in ASSET_TYPES or not os.path.isfile(target):
+            self.send_error_json(404, "找不到资源：" + name)
+            return
+        with open(target, "rb") as handle:
+            body = handle.read()
+        self._send(200, body, ASSET_TYPES[ext])
 
     def handle_waive(self, tag: str) -> None:
         """登记人工豁免并重跑 S1。不改判定规则，只是把「人已确认接受」记下来。"""
@@ -868,6 +909,44 @@ class Handler(BaseHTTPRequestHandler):
             "created_at": session.created_at,
         })
 
+    def handle_chat_delete(self) -> None:
+        """删除一次对话：内存会话和 runs/_chat 下的目录一起清掉。"""
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        session_id = str(payload.get("session_id") or "").strip()
+        if not session_id:
+            self.send_error_json(400, "缺少 session_id", "")
+            return
+
+        with _SESSION_LOCK:
+            session = _SESSIONS.pop(session_id, None)
+        folder = getattr(session, "folder", None) if session is not None else None
+        if folder is None:
+            folder = find_chat_folder(session_id)
+
+        if folder is not None:
+            root = Path(CHAT_ROOT).resolve()
+            target = Path(folder).resolve()
+            if target.parent != root:
+                self.send_error_json(400, "拒绝删除会话目录之外的路径", "")
+                return
+            manifest = target / "session.json"
+            if manifest.is_file():
+                data = try_read_json(str(manifest))
+                saved_id = str(data.get("id") or "")
+                if saved_id and saved_id != session_id:
+                    self.send_error_json(400, "会话目录与 id 不匹配", "")
+                    return
+            if target.is_dir():
+                try:
+                    shutil.rmtree(target)
+                except OSError as exc:
+                    self.send_error_json(500, "删除会话失败", str(exc))
+                    return
+
+        self.send_json({"ok": True, "session_id": session_id})
+
     def handle_chat(self) -> None:
         payload = self.read_json_body()
         if payload is None:
@@ -883,16 +962,34 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(404, "会话已失效，请重新上传文件", "")
             return
         try:
-            result = session.send(message)
+            self.send_stream_headers()
+        except ConnectionError:
+            return
+
+        def emit(event: dict) -> None:
+            self.write_sse(event)
+
+        try:
+            result = session.send(message, on_event=emit)
+        except ConnectionError:
+            log("对话流已断开：" + session_id)
+            return
         except Exception as exc:  # noqa: BLE001
             log("对话失败：" + repr(exc))
-            self.send_json({"ok": False, "error": "助手调用失败：" + str(exc),
-                            "detail": traceback.format_exc()}, 500)
+            try:
+                self.write_sse({"type": "error", "ok": False,
+                                "error": "助手调用失败：" + str(exc),
+                                "detail": traceback.format_exc()})
+            except ConnectionError:
+                pass
             return
-        self.send_json({"ok": True, "reply": result.get("reply", ""),
-                        "events": result.get("events", []),
-                        "thoughts": result.get("thoughts", []),
-                        "run_id": result.get("run_id", "")})
+        try:
+            self.write_sse({"type": "done", "ok": True,
+                            "reply": result.get("reply", ""),
+                            "events": result.get("events", []),
+                            "run_id": result.get("run_id", "")})
+        except ConnectionError:
+            log("对话流已断开：" + session_id)
 
     def read_json_body(self) -> dict | None:
         try:
@@ -937,6 +1034,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/chat/files":
             self.handle_chat_files()
+            return
+        if path == "/api/chat/delete":
+            self.handle_chat_delete()
             return
         if path == "/api/chat":
             self.handle_chat()
