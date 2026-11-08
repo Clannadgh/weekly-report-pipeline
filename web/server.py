@@ -411,6 +411,42 @@ def public_messages(session: Any) -> list[dict]:
     return out
 
 
+def list_s3_runs() -> list[dict]:
+    """只列已经拆过卡的运行；带 issues.json 的标出是否已对账。"""
+    if not os.path.isdir(RUNS_DIR):
+        return []
+    items: list[dict] = []
+    for entry in sorted(os.listdir(RUNS_DIR)):
+        folder = os.path.join(RUNS_DIR, entry)
+        if entry.startswith("_") or not os.path.isdir(folder):
+            continue
+        cards_path = os.path.join(folder, "cards.json")
+        if not os.path.isfile(cards_path):
+            continue
+        cards = try_read_json(cards_path)
+        if cards.get("state") != "ok":
+            continue
+        intake = try_read_json(os.path.join(folder, "intake.json"))
+        run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
+        minutes = intake.get("minutes") if isinstance(intake.get("minutes"), dict) else {}
+        issues_path = os.path.join(folder, "issues.json")
+        issues = try_read_json(issues_path) if os.path.isfile(issues_path) else {}
+        stats = issues.get("stats") if isinstance(issues.get("stats"), dict) else {}
+        items.append({
+            "run_id": str(run.get("period_tag") or entry),
+            "dir": str(run.get("dir") or entry),
+            "period": (str(minutes.get("period_start") or "") + " 至 "
+                       + str(minutes.get("period_end") or "")).strip(" 至"),
+            "cards": int((cards.get("stats") or {}).get("cards") or 0),
+            "checkable": int((cards.get("stats") or {}).get("checkable") or 0),
+            "has_issues": bool(issues),
+            "blocking": int(stats.get("blocking") or 0),
+            "checked": int(stats.get("checked") or 0),
+        })
+    items.sort(key=lambda item: item["run_id"], reverse=True)
+    return items
+
+
 def status_for_intake(intake: dict) -> dict:
     """POST 之后回读 status.json；还没落盘就返回空对象，不替 S1 编状态。"""
     run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
@@ -461,6 +497,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.serve_static("chat.html")
             elif path in ("/s2", "/s2.html"):
                 self.serve_static("s2.html")
+            elif path in ("/s3", "/s3.html"):
+                self.serve_static("s3.html")
+            elif path == "/api/s3/runs":
+                self.send_json({"ok": True, "runs": list_s3_runs()})
+            elif path.startswith("/api/s3/"):
+                self.serve_s3_result(path[len("/api/s3/"):])
             elif path == "/api/s2/runs":
                 self.send_json({"ok": True, "runs": list_s2_runs()})
             elif path.startswith("/api/s2/"):
@@ -566,6 +608,49 @@ class Handler(BaseHTTPRequestHandler):
             return
         log("人工豁免 " + ",".join(items) + " → " + result.state)
         self.send_json({"ok": True, "intake": to_plain(result), "waiver": waiver, "log": logs})
+
+    def serve_s3_result(self, run_id: str) -> None:
+        """读已落盘的 issues.json / ledger.json，不现场重算。"""
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        path = os.path.join(folder, "issues.json")
+        if not os.path.isfile(path):
+            self.send_json({"ok": False, "run_id": tag, "issues": {}, "ledger": {},
+                            "error": "这次运行还没对过账"})
+            return
+        self.send_json({"ok": True,
+                        "issues": try_read_json(path),
+                        "ledger": try_read_json(os.path.join(folder, "ledger.json"))})
+
+    def handle_s3(self) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        run_id = str(payload.get("run_id") or "").strip()
+        if not run_id:
+            self.send_error_json(400, "缺少 run_id", "")
+            return
+        folder = resolve_run_dir(run_id)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + run_id)
+            return
+        try:
+            from pipeline.s3_reconcile import run_s3
+
+            log("S3 开始：" + folder)
+            result, logs = run_s3(folder)
+        except FileNotFoundError as exc:
+            self.send_error_json(404, "前置文件缺失", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            log("S3 失败：" + repr(exc))
+            self.send_error_json(500, "S3 执行失败", traceback.format_exc())
+            return
+        log("S3 完成：" + result.message)
+        self.send_json({"ok": True, "issues": result.model_dump(mode="json"), "log": logs})
 
     def serve_s2_cards(self, tag: str) -> None:
         """读某次运行已落盘的 cards.json；没拆过就明确说没有，不现场补跑。"""
@@ -833,6 +918,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/runs/") and path.endswith("/waive"):
             self.handle_waive(path[len("/api/runs/"):-len("/waive")])
+            return
+        if path == "/api/s3":
+            self.handle_s3()
             return
         if path == "/api/s2":
             self.handle_s2()

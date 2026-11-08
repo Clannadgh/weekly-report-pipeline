@@ -235,3 +235,67 @@ class CardsResult(BaseModel):
     questions: list[str] = Field(default_factory=list)
     message: str = ""
     model: str = ""
+
+
+# ---------------------------------------------------------------- S3 数据对账
+
+class IssueItem(BaseModel):
+    """一条问题：数字对不上、方向反了、实体不存在、材料缺失。"""
+    id: str = ""
+    level: str = "信息"          # 阻断 / 提示 / 信息
+    type: str = "number"         # number/direction/entity/missing/caliber/data_gap
+    card: str = ""
+    subject: str = ""
+    minutes_said: str = ""
+    raw: str = ""
+    value: float | None = None
+    diff: float | None = None
+    question_hash: str = ""
+    suggest: str = ""
+
+
+class ResultItem(BaseModel):
+    """一条已对上的结果，explain 是六项固定说明。"""
+    card: str = ""
+    explain: str = ""
+    value: float | None = None
+    question_hash: str = ""
+
+
+class ReconcileStats(BaseModel):
+    blocking: int = 0
+    warn: int = 0
+    info: int = 0
+    checked: int = 0
+    calls: int = 0
+    ok: int = 0
+    parse_failed: int = 0
+
+
+class IssuesResult(BaseModel):
+    week: str = ""
+    run_id: str = ""
+    issues: list[IssueItem] = Field(default_factory=list)
+    results: list[ResultItem] = Field(default_factory=list)
+    stats: ReconcileStats = Field(default_factory=ReconcileStats)
+    coverage: list[dict] = Field(default_factory=list)
+    message: str = ""
+    state: str = "ok"
+
+
+class LedgerEntry(BaseModel):
+    key: str = ""
+    value: float = 0.0
+    unit: str = "元"
+    display: str = ""
+    spec: str = ""
+    question_hash: str = ""
+    code_hash: str = "内置规则"
+    status: str = "ok"
+    verdict: str = "none"
+    diff: float | None = None
+    shape: str = "number"
+
+
+class Ledger(BaseModel):
+    entries: list[LedgerEntry] = Field(default_factory=list)

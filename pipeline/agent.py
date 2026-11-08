@@ -53,6 +53,11 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
     用户要正文时，直接说明「下一步 S3 取数还没接入，现在给不了正文」。
 18. 转述卡片时字段值照抄：指标、期望、单位、目标值是什么就说什么，
     不要把「具体数值」译成「七成」，也不要从原话里再加工出别的说法。
+19. 顺序是 S1 → S2 → S3。S3 对账要等 S2 拆完卡才能调；S1 没准入、S2 没拆卡时不要跳步。
+20. S3 返回 issues 时，先报三个数：阻断、提示、信息；再把阻断级的问题逐条念出来
+    （对象、纪要怎么说、数据是多少、建议怎么改）。有阻断时明确说「必须先处理才能往下」，
+    不要用「基本一致」「大致吻合」这类话把 mismatch 说轻。
+21. S3 的数字只能照抄工具返回的 display / raw，不要自己再算一遍或换算单位。
 """
 
 TOOLS = [
@@ -85,6 +90,16 @@ TOOLS = [
                 },
                 "required": ["run_id"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_s3",
+            "description": ("对本次会话已拆卡的运行做 S3 数据对账：拿卡片去数据里取数、判对错，"
+                            "产出问题清单与数字台账。必须在 S2 拆卡完成之后调用。"
+                            "返回阻断/提示/信息条数、问题明细、覆盖率。"),
+            "parameters": {"type": "object", "properties": {}},
         },
     },
     {
@@ -210,6 +225,31 @@ def _summarize_cards(result) -> dict:
     if data.get("dropped"):
         payload["dropped"] = data["dropped"][:5]
     return payload
+
+
+def _summarize_issues(result) -> dict:
+    data = result.model_dump(mode="json")
+    stats = data.get("stats") or {}
+    blocking = [item for item in (data.get("issues") or []) if item.get("level") == "阻断"]
+    warn = [item for item in (data.get("issues") or []) if item.get("level") == "提示"]
+    uncovered = [c for c in (data.get("coverage") or []) if c.get("status") == "uncovered"]
+    return {
+        "ok": data.get("state") == "ok",
+        "run_id": data.get("run_id"),
+        "state": data.get("state"),
+        "message": data.get("message"),
+        "stats": stats,
+        "blocking": blocking[:10],
+        "warn": warn[:5],
+        "uncovered": [c.get("item") for c in uncovered][:10],
+        "checked_results": [
+            {"card": item.get("card"), "value": item.get("value"),
+             "explain": item.get("explain")}
+            for item in (data.get("results") or [])[:5]
+        ],
+        "artifacts": {"issues": str(data.get("run_id") or "") + "/issues.json",
+                      "ledger": str(data.get("run_id") or "") + "/ledger.json"},
+    }
 
 
 class Session:
@@ -407,6 +447,26 @@ class Session:
         payload["log"] = logs[-6:]
         return payload
 
+    def _run_s3(self, args: dict) -> dict:
+        """S3 对账。纯代码取数，不调模型。"""
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先调 run_s1 和 run_s2。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s3_reconcile import run_s3
+
+            result, logs = run_s3(folder)
+        except FileNotFoundError as exc:
+            return {"ok": False, "error": "前置文件缺失：" + str(exc)}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": "S3 执行失败：" + str(exc)}
+        payload = _summarize_issues(result)
+        payload["log"] = logs[-6:]
+        return payload
+
     def _waive_conflicts(self, args: dict) -> dict:
         """登记人工豁免，然后重跑 S1。豁免只对本次运行生效，写进 waiver.json 留痕。"""
         run_id = str(args.get("run_id") or self.last_run or "").strip()
@@ -437,6 +497,8 @@ class Session:
             return self._run_s1(args, fallback_prompt)
         if name == "run_s2":
             return self._run_s2(args)
+        if name == "run_s3":
+            return self._run_s3(args)
         if name == "waive_conflicts":
             return self._waive_conflicts(args)
         if name == "get_run":
