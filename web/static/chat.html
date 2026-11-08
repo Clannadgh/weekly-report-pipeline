@@ -68,13 +68,31 @@ button.primary:hover{background:#1a52a6}
 .composer{display:flex;gap:10px;align-items:flex-end;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:16px}
 .composer textarea{flex:1;border:0;outline:0;resize:none;min-height:44px;max-height:140px;font:inherit;padding:6px 4px}
 .tip{color:var(--muted);font-size:12px;margin:0 0 10px 4px}
+.topbar nav{display:flex;align-items:center;gap:14px}
+button.small{padding:4px 10px;font-size:12px}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:340px;max-width:86vw;background:#fff;border-left:1px solid var(--line);box-shadow:-6px 0 24px rgba(15,23,42,.08);z-index:20;display:flex;flex-direction:column}
+.drawer.hidden{display:none}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+.drawer-head button{border:0;background:transparent;font-size:20px;color:var(--muted);cursor:pointer;line-height:1}
+.hist-list{flex:1;overflow-y:auto;padding:10px}
+.hist-item{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:10px;background:#fbfcfd;padding:10px 12px;margin-bottom:8px;cursor:pointer;font:inherit}
+.hist-item:hover{border-color:var(--blue);background:#f1f6fd}
+.hist-item.active{border-color:var(--blue);background:#eef3fb}
+.hist-preview{font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-meta{font-size:11.5px;color:var(--muted);margin-top:4px}
+.hist-empty{color:var(--muted);font-size:12.5px;text-align:center;padding:20px}
 @media(max-width:640px){.bubble{max-width:90%}.chat-wrap{padding:12px 10px 0}}
 </style>
 </head>
 <body>
 <header class="topbar">
   <div class="brand">经营周报助手</div>
-  <nav><a href="/">准入检查页</a><a href="/api/runs" target="_blank">运行记录</a></nav>
+  <nav>
+    <a href="/">准入检查页</a>
+    <a href="/s2.html">拆卡页</a>
+    <a href="/api/runs" target="_blank">运行记录</a>
+    <button class="ghost small" id="historyBtn" type="button">历史对话</button>
+  </nav>
 </header>
 <main class="chat-wrap">
   <section class="uploader">
@@ -97,12 +115,20 @@ button.primary:hover{background:#1a52a6}
     </div>
   </section>
 
-  <p class="tip">Enter 发送，Shift + Enter 换行。数字与结论都来自 S1 工具，助手只负责转述。</p>
+  <p class="tip">Enter 发送，Shift + Enter 换行。数字与结论都来自工具，助手只负责转述；对话会自动保存，刷新可接着聊。</p>
   <section class="composer">
     <textarea id="input" rows="1" placeholder="说说你想做什么，或问 S1 返回了什么…"></textarea>
     <button class="primary" id="sendBtn" type="button">发送</button>
   </section>
 </main>
+
+<aside class="drawer hidden" id="historyDrawer">
+  <div class="drawer-head">
+    <strong>历史对话</strong>
+    <button id="drawerClose" type="button" aria-label="关闭">×</button>
+  </div>
+  <div class="hist-list" id="historyList"></div>
+</aside>
 <script>
 (function () {
   "use strict";
@@ -191,6 +217,7 @@ button.primary:hover{background:#1a52a6}
     var data = await resp.json();
     if (!data.ok) throw new Error(data.error || "创建会话失败");
     sessionId = data.session_id;
+    remember(sessionId);
     boundNames = data.files || [];
     if (bound) bound.textContent = "本次会话已绑定：" + boundNames.join("、");
   }
@@ -337,7 +364,98 @@ button.primary:hover{background:#1a52a6}
       .catch(function () {});
   }
 
-  function setBusy(busy) {
+  // ---- 会话持久化 ----
+  var SESSION_KEY = "weekly_report_session";
+  var historyDrawer = document.getElementById("historyDrawer");
+  var historyList = document.getElementById("historyList");
+  var historyBtn = document.getElementById("historyBtn");
+  var drawerClose = document.getElementById("drawerClose");
+
+  function remember(id) {
+    try { localStorage.setItem(SESSION_KEY, id || ""); } catch (e) {}
+  }
+  function recall() {
+    try { return localStorage.getItem(SESSION_KEY) || ""; } catch (e) { return ""; }
+  }
+
+  function clearMessages() {
+    messages.textContent = "";
+    welcome = null;
+    var node = el("div", "welcome", "新的一轮。选文件或直接提问。");
+    node.id = "welcome";
+    messages.appendChild(node);
+    welcome = node;
+  }
+
+  async function restoreSession(id) {
+    var resp = await fetch("/api/chat/history/" + encodeURIComponent(id));
+    var data = await resp.json();
+    if (!data.ok) {
+      remember("");
+      throw new Error(data.error || "恢复失败");
+    }
+    sessionId = data.session_id;
+    boundNames = data.files || [];
+    if (bound) {
+      bound.textContent = boundNames.length
+        ? "本次会话已绑定：" + boundNames.join("、")
+        : "这个对话没有附件，可重新选择文件";
+    }
+    picked = [];
+    renderChips();
+    (data.messages || []).forEach(function (m) {
+      appendMessage(m.role === "user" ? "user" : "assistant", m.text);
+    });
+    remember(sessionId);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  async function openHistory() {
+    historyDrawer.classList.remove("hidden");
+    historyList.textContent = "";
+    try {
+      var resp = await fetch("/api/chat/history");
+      var data = await resp.json();
+      var sessions = data.sessions || [];
+      if (!sessions.length) {
+        historyList.appendChild(el("p", "hist-empty", "还没有保存过的对话。"));
+        return;
+      }
+      sessions.forEach(function (item) {
+        var btn = el("button", "hist-item" + (item.session_id === sessionId ? " active" : ""));
+        btn.type = "button";
+        btn.appendChild(el("div", "hist-preview", item.preview || "（无文字）"));
+        var meta = [item.updated_at ? item.updated_at.replace("T", " ").slice(5, 16) : "",
+                    (item.files || []).length + " 个文件",
+                    item.turns + " 轮"].filter(Boolean).join(" · ");
+        btn.appendChild(el("div", "hist-meta", meta));
+        btn.addEventListener("click", async function () {
+          if (item.session_id === sessionId) {
+            historyDrawer.classList.add("hidden");
+            return;
+          }
+          try {
+            clearMessages();
+            sessionId = null;
+            await restoreSession(item.session_id);
+            historyDrawer.classList.add("hidden");
+          } catch (err) {
+            appendMessage("error", "切换失败：" + (err.message || err));
+          }
+        });
+        historyList.appendChild(btn);
+      });
+    } catch (err) {
+      historyList.appendChild(el("p", "hist-empty", "读取失败：" + err.message));
+    }
+  }
+
+  if (historyBtn) historyBtn.addEventListener("click", openHistory);
+  if (drawerClose) drawerClose.addEventListener("click", function () {
+    historyDrawer.classList.add("hidden");
+  });
+
+    function setBusy(busy) {
     // 只锁发送，避免重复提交；上传和删除任何时候都能点
     sendBtn.disabled = busy;
     sendBtn.textContent = busy ? "思考中…" : "发送";
@@ -398,6 +516,15 @@ button.primary:hover{background:#1a52a6}
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 140) + "px";
   });
+
+  // 刷新后自动接上上次的对话
+  var savedId = recall();
+  if (savedId) {
+    restoreSession(savedId).catch(function () {
+      remember("");
+      if (bound) bound.textContent = "上次的对话没找到，重新选文件即可开始。";
+    });
+  }
 })();
 </script>
 </body>

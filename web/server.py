@@ -351,6 +351,66 @@ def list_s2_runs() -> list[dict]:
     return items
 
 
+def list_chat_sessions() -> list[dict]:
+    """列出落盘过的对话。按更新时间倒序。"""
+    items: list[dict] = []
+    if not os.path.isdir(CHAT_ROOT):
+        return items
+    for entry in os.listdir(CHAT_ROOT):
+        folder = os.path.join(CHAT_ROOT, entry)
+        path = os.path.join(folder, "session.json")
+        if not os.path.isfile(path):
+            continue
+        data = try_read_json(path)
+        if not data.get("id"):
+            continue
+        messages = data.get("messages") or []
+        preview = ""
+        for message in messages:
+            if isinstance(message, dict) and message.get("role") == "user":
+                preview = str(message.get("content") or "")[:60]
+                break
+        items.append({
+            "session_id": data.get("id"),
+            "created_at": data.get("created_at") or "",
+            "updated_at": data.get("updated_at") or "",
+            "files": data.get("files") or [],
+            "turns": sum(1 for m in messages if isinstance(m, dict) and m.get("role") == "user"),
+            "preview": preview,
+            "folder": entry,
+        })
+    items.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+    return items
+
+
+def find_chat_folder(session_id: str) -> str | None:
+    if not os.path.isdir(CHAT_ROOT):
+        return None
+    for entry in os.listdir(CHAT_ROOT):
+        folder = os.path.join(CHAT_ROOT, entry)
+        if os.path.isfile(os.path.join(folder, "session.json")):
+            data = try_read_json(os.path.join(folder, "session.json"))
+            if str(data.get("id") or "") == session_id:
+                return folder
+    return None
+
+
+def public_messages(session: Any) -> list[dict]:
+    """给前端渲染用：只保留有正文的用户与助手消息。"""
+    out: list[dict] = []
+    for message in session.messages:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        text = message.get("content")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        out.append({"role": role, "text": text.strip()})
+    return out
+
+
 def status_for_intake(intake: dict) -> dict:
     """POST 之后回读 status.json；还没落盘就返回空对象，不替 S1 编状态。"""
     run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
@@ -409,6 +469,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True})
             elif path == "/api/llm":
                 self.serve_llm_info()
+            elif path == "/api/chat/history":
+                self.send_json({"ok": True, "sessions": list_chat_sessions()})
+            elif path.startswith("/api/chat/history/"):
+                self.handle_chat_restore(path[len("/api/chat/history/"):])
             elif path == "/api/chat/progress":
                 self.handle_chat_progress(urlparse(self.path).query)
             elif path == "/api/runs":
@@ -621,6 +685,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         with _SESSION_LOCK:
             _SESSIONS[session.id] = session
+        session.save()
         log("对话会话 " + session.id + "，文件 " + "、".join(os.path.basename(p) for p in saved))
         self.send_json({"ok": True, "session_id": session.id,
                         "files": [os.path.basename(p) for p in saved]})
@@ -678,6 +743,38 @@ class Handler(BaseHTTPRequestHandler):
         snapshot = session.progress_snapshot()
         snapshot["ok"] = True
         self.send_json(snapshot)
+
+    def handle_chat_restore(self, session_id: str) -> None:
+        """恢复一次对话：内存里有就用内存的，没有就从 session.json 重建。"""
+        session_id = unquote(session_id).strip()
+        with _SESSION_LOCK:
+            session = _SESSIONS.get(session_id)
+        if session is None:
+            folder = find_chat_folder(session_id)
+            if folder is None:
+                self.send_error_json(404, "找不到这个对话：" + session_id)
+                return
+            try:
+                from pipeline.agent import Session
+
+                session = Session.restore(Path(folder), run_root=Path(RUNS_DIR))
+            except Exception as exc:  # noqa: BLE001
+                self.send_error_json(500, "恢复对话失败", traceback.format_exc())
+                return
+            if session is None:
+                self.send_error_json(404, "会话文件缺失或损坏：" + session_id)
+                return
+            with _SESSION_LOCK:
+                _SESSIONS[session.id] = session
+            log("恢复对话 " + session.id + "（" + folder + "）")
+        self.send_json({
+            "ok": True,
+            "session_id": session.id,
+            "files": [f.name for f in session.files],
+            "messages": public_messages(session),
+            "run_id": session.last_run,
+            "created_at": session.created_at,
+        })
 
     def handle_chat(self) -> None:
         payload = self.read_json_body()

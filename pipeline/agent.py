@@ -216,9 +216,11 @@ class Session:
     """一次对话：文件固定，消息累积，工具可重复调用。"""
 
     def __init__(self, files: list[Path], run_root: Path | None = None,
-                 spec_path: Path | None = None, folder: Path | None = None) -> None:
-        self.id = uuid.uuid4().hex[:12]
+                 spec_path: Path | None = None, folder: Path | None = None,
+                 session_id: str | None = None) -> None:
+        self.id = session_id or uuid.uuid4().hex[:12]
         self.folder = Path(folder) if folder else None
+        self.created_at = dt.datetime.now().isoformat(timespec="seconds")
         self.files = [Path(f) for f in files]
         self.run_root = Path(run_root or DEFAULT_RUN_ROOT)
         self.spec_path = Path(spec_path) if spec_path else None
@@ -235,6 +237,61 @@ class Session:
             "steps": [],
             "states": [],
         }
+
+    def _files_note(self) -> str:
+        if not self.files:
+            return "\n\n本次会话还没有附件。"
+        names = "、".join(f.name for f in self.files)
+        return "\n\n本次会话已绑定 " + str(len(self.files)) + " 个文件：" + names + "。"
+
+    # -- 落盘 --------------------------------------------------------------
+    def snapshot(self) -> dict:
+        """只存不含 system 的消息：提示词随代码更新，恢复时用当前版本。"""
+        return {
+            "id": self.id,
+            "created_at": self.created_at,
+            "updated_at": dt.datetime.now().isoformat(timespec="seconds"),
+            "files": [f.name for f in self.files],
+            "messages": self.messages[1:],
+            "last_run": self.last_run,
+            "last_prompt": self.last_prompt,
+            "run_ids": list(self.run_ids),
+        }
+
+    def save(self) -> None:
+        if self.folder is None:
+            return
+        try:
+            self.folder.mkdir(parents=True, exist_ok=True)
+            (self.folder / "session.json").write_text(
+                json.dumps(self.snapshot(), ensure_ascii=False, indent=2),
+                encoding="utf-8")
+        except OSError:
+            pass  # 落盘失败不影响这一轮对话
+
+    @classmethod
+    def restore(cls, folder: Path, run_root: Path | None = None,
+                spec_path: Path | None = None) -> "Session | None":
+        """从 session.json 恢复。文件不在了就只恢复对话，不恢复附件。"""
+        folder = Path(folder)
+        path = folder / "session.json"
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        names = data.get("files") or []
+        files = [folder / name for name in names if (folder / name).is_file()]
+        session = cls(files, run_root=run_root, spec_path=spec_path,
+                      folder=folder, session_id=str(data.get("id") or "") or None)
+        session.created_at = str(data.get("created_at") or session.created_at)
+        session.messages = [{"role": "system", "content": SYSTEM + session._files_note()}] \
+            + list(data.get("messages") or [])
+        session.last_run = str(data.get("last_run") or "")
+        session.last_prompt = str(data.get("last_prompt") or "")
+        session.run_ids = [str(x) for x in (data.get("run_ids") or [])]
+        return session
 
     def add_files(self, paths: list[Path]) -> list[str]:
         """把新文件并入本次会话；同名文件视为替换。"""
@@ -397,6 +454,7 @@ class Session:
         text = (text or "").strip()
         if not text:
             return {"reply": "请说说你想做什么。", "events": [], "run_id": self.last_run}
+        self.messages[0] = {"role": "system", "content": SYSTEM + self._files_note()}
         self.messages.append({"role": "user", "content": text})
         events: list[dict] = []
 
@@ -413,6 +471,7 @@ class Session:
                 if not reply:
                     reply = "模型没有返回内容，请稍后再试。"
                 self.messages.append({"role": "assistant", "content": reply})
+                self.save()
                 return {"reply": reply, "events": events, "run_id": self.last_run,
                         "thoughts": list(self.thoughts)}
 
@@ -439,6 +498,7 @@ class Session:
                     "content": json.dumps(result, ensure_ascii=False),
                 })
 
+        self.save()
         return {"reply": "工具调用轮次过多，先停在这里。请把问题说得更具体一些。",
                 "events": events, "run_id": self.last_run,
                 "thoughts": list(self.thoughts)}
