@@ -25,8 +25,12 @@ def make_llm(model: str | None = None, api_key: str | None = None,
                   api_base=base_url or config.base_url)
 
 
-def make_qa(frames: dict, cache_dir: Any = None) -> Any:
-    """构造 DataQA，llm 指向 GLM。"""
+def make_qa(frames: dict, cache_dir: Any = None, max_retries: int = 2) -> Any:
+    """构造 DataQA，llm 指向 GLM。
+
+    max_retries 是 pandasai 内部的代码纠错次数：生成的代码执行报错时，
+    它会把异常回传给模型重写一次。给 2 比默认的 1 稳，代价是失败时多一轮调用。
+    """
     import sys
     from pathlib import Path
 
@@ -35,4 +39,5 @@ def make_qa(frames: dict, cache_dir: Any = None) -> Any:
         sys.path.insert(0, str(root))
     from tools.ask_data import DataQA  # type: ignore
 
-    return DataQA(frames, llm=make_llm(), cache_dir=cache_dir)
+    return DataQA(frames, llm=make_llm(), cache_dir=cache_dir,
+                  max_retries=max(1, int(max_retries)))

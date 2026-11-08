@@ -360,6 +360,23 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                 out = {"ok": False, "value": None, "verdict": "unsupported",
                        "flags": ["call_failed:" + str(exc)[:80]], "raw": "",
                        "code": "", "question_hash": _qhash(card_id, "call_failed")}
+            # s3.txt：同一问题最多问两次，第二次只在解析失败时进行
+            if out.get("status") == "parse_failed":
+                flags_now = [str(flag) for flag in (out.get("flags") or [])]
+                hint = ""
+                if "unit_pct_suspect" in flags_now:
+                    hint = "百分比请带 % 输出。"
+                elif "tolerance_unparsed" in flags_now:
+                    hint = "只输出一个数字，不要加单位和百分号。"
+                try:
+                    retry = _ask_card(qa, card, qa_column, entity, period, compare, hint)
+                except Exception:
+                    retry = None
+                stats.calls += 1
+                if retry is not None and retry.get("status") == "ok":
+                    out = retry
+                    log.append("重问成功：" + card_id)
+
             ask_flags = [str(flag) for flag in (out.get("flags") or [])]
             current = out.get("value")
             verdict = str(out.get("verdict") or "none")
@@ -368,6 +385,8 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
             code = str(out.get("code") or "")
             code_hash = (hashlib.sha256(code.encode("utf-8")).hexdigest()[:16]
                          if code else "无代码")
+            if out.get("status") == "parse_failed":
+                ask_flags = ask_flags + ["重问后仍解析失败"]
             if out.get("fallback") or verdict == "none":
                 verdict = "unsupported"
             if any(flag.startswith("reference_unparsed") for flag in ask_flags):
@@ -670,7 +689,7 @@ def _build_expected(expect: str, metric: str, unit: str,
 
 
 def _ask_card(qa, card: dict, column: str, entity: str,
-              period: str, compare: str) -> dict:
+              period: str, compare: str, extra_hint: str = "") -> dict:
     """调 pandasai 取一张卡片的数。返回工具的原始结果。"""
     metric = str(card.get("metric") or "")
     expect = str(card.get("expect") or "")
@@ -689,6 +708,8 @@ def _ask_card(qa, card: dict, column: str, entity: str,
         kwargs["expected"] = expected
     if reference is not None:
         kwargs["reference"] = reference
+    if extra_hint:
+        question = question + " " + extra_hint
     out = qa.ask(question, **kwargs)
     out["question"] = question
     return out
