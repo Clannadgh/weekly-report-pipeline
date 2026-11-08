@@ -1450,54 +1450,6 @@ body.drawer-open{overflow:hidden}
       body.appendChild(el("p", "detail-note", "没有对账问题。"));
     }
 
-    var coverage = issues.coverage || [];
-    if (coverage.length) {
-      var coverSec = detailSection("覆盖检查");
-      var coverUl = el("ul", "detail-list");
-      coverage.forEach(function (item) {
-        var li = el("li");
-        var covered = item.status === "covered";
-        li.appendChild(el("span", "d-tag " + (covered ? "ok" : "warn"), covered ? "已覆盖" : (item.status || "未覆盖")));
-        li.appendChild(document.createTextNode(item.item || ""));
-        if (item.note) li.appendChild(el("div", "detail-sub", item.note));
-        coverUl.appendChild(li);
-      });
-      coverSec.appendChild(coverUl);
-      body.appendChild(coverSec);
-    }
-
-    var entries = (ledger && ledger.entries) || [];
-    if (entries.length) {
-      var ledgerSec = detailSection("数字台账");
-      var wrap = el("div", "s2-table-wrap");
-      var table = el("table", "s2-table");
-      var thead = el("thead");
-      var headRow = el("tr");
-      ["卡片", "数值", "判定", "代码", "口径"].forEach(function (text) {
-        headRow.appendChild(el("th", "", text));
-      });
-      thead.appendChild(headRow);
-      table.appendChild(thead);
-      var tbody = el("tbody");
-      entries.forEach(function (entry) {
-        var tr = el("tr");
-        tr.appendChild(el("td", "nowrap", entry.card || ""));
-        var shown = entry.display || (entry.value !== undefined ? String(entry.value) : "—");
-        tr.appendChild(el("td", "nowrap", shown + (entry.unit ? " " + entry.unit : "")));
-        var verdict = String(entry.verdict || "");
-        var vTone = verdict === "match" ? "ok" : (verdict === "mismatch" ? "stop" : "warn");
-        var vTd = el("td", "nowrap");
-        vTd.appendChild(el("span", "d-tag " + vTone, verdict || "—"));
-        tr.appendChild(vTd);
-        tr.appendChild(el("td", "nowrap s3-code", entry.code_hash || "—"));
-        tr.appendChild(el("td", "detail-sub s2-source", entry.spec || ""));
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      wrap.appendChild(table);
-      ledgerSec.appendChild(wrap);
-      body.appendChild(ledgerSec);
-    }
   }
 
   async function openS3Detail(runId) {
