@@ -29,9 +29,10 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
 7. 用户问「S1 返回了什么」时，按三层回答：一句话结论、问题清单、需要看细节时给 run_id。
 8. 用户要求出周报或检查材料时，必须调用 run_s1 重新检查本次会话的文件；不得用历史运行的结果代替。
    回答时点明本次查到的文件名与行数，让用户能确认读的是哪一批数据。
-9. 用户说「继续」时，先看本次会话最近一次 run_s1 的结果：
-   - 如果它是暂停或待补充，就追问缺的那一项（例如「还缺 1 份纪要」），不要列历史运行让用户选；
-   - 如果本次会话还没跑过，就直接对当前文件跑 run_s1；
+9. 用户说「继续」时，按本次会话的进度判断：
+   - 还没跑过 S1 → 直接调 run_s1；
+   - S1 是暂停或待补充 → 追问缺的那一项（例如「还缺 1 份纪要」），不要列历史运行让用户选；
+   - S1 已准入但还没拆卡 → 调 run_s2；
    - 只有用户明确说「看看以前的运行」时，才调用 list_runs。
 10. list_runs 只返回本次会话的运行记录。别的会话的 w42/w43/w44 不属于当前上下文，不要主动提，
     也不要把它们当成可选项让用户挑。
@@ -39,6 +40,19 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
     这是人工裁决，不是工具改判：豁免会写进 waiver.json，S8 归档时能查到是谁、什么时候、为什么放行。
     用户没说之前，绝不自己决定忽略。
 12. 豁免后必须重跑一次 S1，以新的 state 为准；不要假设豁免一定会让状态变成准入通过。
+13. 出周报的顺序是 S1 → S2。只有本次会话的 S1 返回「准入通过」时才能调 run_s2；
+    S1 还是暂停或待补充时，先把问题处理完，不要跳过。
+14. S2 只整理不判断。卡片里的「能对数据」才是可核对的结论，「不能」「不确定」只是留档，
+    不要把它们当成结论讲给用户。
+15. 转述 S2 结果时给三个数：卡片总数、可对数据数、动作项数；再挑可核对的卡片说原文和指标。
+    不要自己计算卡片里的数字，也不要替 S2 判断卡片对不对。
+16. 一次只推进一个阶段：调完 run_s1 就报告结果并停下，等用户说「继续」再调 run_s2。
+    只有用户明确说「一路做完」「不用问我」时，才允许连续调用。
+17. 当前流水线只实现到 S2。S3 取数、S4 改稿、S5 写正文都还没有接，
+    绝对不要自己写周报正文、章节标题、汇总表格，也不要把卡片原话改写成段落。
+    用户要正文时，直接说明「下一步 S3 取数还没接入，现在给不了正文」。
+18. 转述卡片时字段值照抄：指标、期望、单位、目标值是什么就说什么，
+    不要把「具体数值」译成「七成」，也不要从原话里再加工出别的说法。
 """
 
 TOOLS = [
@@ -70,6 +84,22 @@ TOOLS = [
                     "section": {"type": "string"},
                 },
                 "required": ["run_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_s2",
+            "description": ("对本次会话已准入的运行做 S2 纪要拆卡：把纪要拆成一张张卡片。"
+                            "必须在 S1 返回准入通过之后才能调用。"
+                            "返回卡片总数、可对数据数、可核对卡片的原文与指标、动作项与未来事项。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "force": {"type": "boolean",
+                              "description": "已经拆过卡时是否强制重拆，默认 false 表示复用"},
+                },
             },
         },
     },
@@ -140,6 +170,46 @@ def _summarize(intake: dict) -> dict:
                          for r in requirements],
         "artifacts": {"intake": (run.get("dir") or "") + "/intake.json"},
     }
+
+
+def _summarize_cards(result) -> dict:
+    """S2 结果给模型的摘要：够回答，又不把几十张卡片塞进上下文。"""
+    data = result.model_dump(mode="json")
+    checkable = [card for card in data.get("cards") or [] if card.get("checkable") == "能"]
+    payload = {
+        "ok": data.get("state") == "ok",
+        "run_id": data.get("run_id"),
+        "state": data.get("state"),
+        "message": data.get("message"),
+        "period": data.get("period"),
+        "compare_period": data.get("compare_period"),
+        "source": data.get("source"),
+        "stats": data.get("stats") or {},
+        "checkable_cards": [
+            {
+                "id": card.get("id"),
+                "quote": card.get("quote"),
+                "entity": card.get("entity"),
+                "entity_type": card.get("entity_type"),
+                "metric": card.get("metric"),
+                "expect": card.get("expect"),
+                "unit": card.get("unit"),
+                "target_value": card.get("target_value"),
+                "source": card.get("source"),
+            }
+            for card in checkable[:8]
+        ],
+        "checkable_total": len(checkable),
+        "other_cards": len(data.get("cards") or []) - len(checkable),
+        "actions": (data.get("actions") or [])[:5],
+        "future": [item.get("text") for item in (data.get("future") or [])[:5]],
+        "artifacts": {"cards": str(data.get("dir") or "") + "/cards.json"},
+    }
+    if data.get("questions"):
+        payload["questions"] = data["questions"]
+    if data.get("dropped"):
+        payload["dropped"] = data["dropped"][:5]
+    return payload
 
 
 class Session:
@@ -259,6 +329,27 @@ class Session:
         items.sort(key=lambda x: x["at"], reverse=True)
         return {"ok": True, "runs": items}
 
+    def _run_s2(self, args: dict) -> dict:
+        """S2 拆卡。用本次会话最近一次准入的运行，不用用户再选。"""
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False,
+                    "error": "还没有准入通过的运行，先调 run_s1，确认 state=准入通过 后再拆卡。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s2_cards import run_s2
+
+            result, logs = run_s2(folder, force=bool(args.get("force")))
+        except FileNotFoundError as exc:
+            return {"ok": False, "error": "前置文件缺失：" + str(exc)}
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给模型转述
+            return {"ok": False, "error": "S2 执行失败：" + str(exc)}
+        payload = _summarize_cards(result)
+        payload["log"] = logs[-6:]
+        return payload
+
     def _waive_conflicts(self, args: dict) -> dict:
         """登记人工豁免，然后重跑 S1。豁免只对本次运行生效，写进 waiver.json 留痕。"""
         run_id = str(args.get("run_id") or self.last_run or "").strip()
@@ -287,6 +378,8 @@ class Session:
     def _execute(self, name: str, args: dict, fallback_prompt: str) -> dict:
         if name == "run_s1":
             return self._run_s1(args, fallback_prompt)
+        if name == "run_s2":
+            return self._run_s2(args)
         if name == "waive_conflicts":
             return self._waive_conflicts(args)
         if name == "get_run":
