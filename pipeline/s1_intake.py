@@ -550,6 +550,43 @@ def _build_consistency(
 
 # ---------------------------------------------------------------- 运行目录
 
+def _read_json_or_empty(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _archive_attempt(run_dir: Path, log: list[str]) -> None:
+    """同周重跑前，把上一次的 intake/status 归档，避免详细冲突被覆盖。"""
+    intake_path = run_dir / "intake.json"
+    status_path = run_dir / "status.json"
+    if not intake_path.is_file() and not status_path.is_file():
+        return
+    attempts_dir = run_dir / "attempts"
+    try:
+        attempts_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log.append("归档上一次运行失败：" + str(exc))
+        return
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    target = attempts_dir / (stamp + ".json")
+    suffix = 2
+    while target.exists():
+        target = attempts_dir / (stamp + "-" + str(suffix) + ".json")
+        suffix += 1
+    payload = {
+        "archived_at": datetime.now().isoformat(timespec="seconds"),
+        "intake": _read_json_or_empty(intake_path) if intake_path.is_file() else {},
+        "status": _read_json_or_empty(status_path) if status_path.is_file() else {},
+    }
+    try:
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        log.append("归档上一次运行：" + target.name)
+    except OSError as exc:
+        log.append("归档上一次运行失败：" + str(exc))
+
+
 def _choose_run_dir(run_root: Path, tag: str) -> Path:
     index = 1
     candidate = run_root / tag
@@ -709,8 +746,18 @@ def _requirements_from_map(mapping, data_recs: list[tuple[Path, FileInfo]]):
     return requirements, missing, degrade
 
 
+def _rules_allowed() -> bool:
+    """仅离线测试显式允许规则回退；生产默认必须走 AI。"""
+    env = os.environ.get("S1_ALLOW_RULES", "").strip().lower()
+    return env in ("1", "true", "yes", "on")
+
+
 def _ai_enabled(use_ai: bool | None) -> bool:
-    """默认：有 GLM_API_KEY 就用 AI 做映射；S1_USE_AI=0 可强制关掉。"""
+    """默认：有 GLM_API_KEY 就用 AI 做映射；S1_USE_AI=0 可强制关掉。
+
+    关掉 AI 后是否允许规则回退由 S1_ALLOW_RULES 决定；生产环境不设置它，
+    S1 会暂停而不是悄悄用规则放行。
+    """
     if use_ai is not None:
         return use_ai
     env = os.environ.get("S1_USE_AI", "").strip().lower()
@@ -907,6 +954,7 @@ def run_intake(
         log.append(f"周期标识 {tag}，运行目录 {run.dir}")
 
     if run_dir is not None:
+        _archive_attempt(run_dir, log)
         mapping = _copy_inputs(paths, run_dir, log)
         for path, info in records:
             info.path = mapping.get(_path_key(path), "")
@@ -922,7 +970,9 @@ def run_intake(
     compare = (minutes.compare_start, minutes.compare_end)
     columns_by_file = {info.name: list(info.columns) for _p, info in data_recs if info.columns}
     domain = None
-    if _ai_enabled(use_ai) and run_dir is not None and minutes_text and columns_by_file:
+    ai_blocker = ""
+    ai_enabled = _ai_enabled(use_ai)
+    if ai_enabled and run_dir is not None and minutes_text and columns_by_file:
         try:
             from .domain_map import load_or_build
 
@@ -932,14 +982,22 @@ def run_intake(
             for item in domain.dropped[:5]:
                 log.append("映射丢弃：" + item)
         except Exception as exc:  # noqa: BLE001 - 映射失败不能拖垮整步
-            log.append(f"AI 映射不可用，退回规则匹配：{exc}")
+            log.append(f"AI 映射不可用：{exc}")
             domain = None
+            if not _rules_allowed():
+                ai_blocker = "AI 映射失败：" + str(exc)
+    elif not ai_enabled and not _rules_allowed() and run_dir is not None:
+        ai_blocker = "AI 映射未启用（检查 GLM_API_KEY 或 S1_USE_AI）"
 
     if domain is not None and domain.metrics:
         requirements, missing, degrade = _requirements_from_map(domain, data_recs)
-    else:
+    elif _rules_allowed():
         requirements, missing, degrade = _build_requirements(
             data_recs, minutes.metrics, merged, compare, _core_metrics(minutes_text, minutes.metrics))
+    else:
+        requirements, missing, degrade = [], [], []
+        if not ai_blocker and run_dir is not None and minutes_text and columns_by_file:
+            ai_blocker = "AI 映射没有识别出任何指标"
     log.append(
         "需求矩阵："
         + "，".join(f"{r.item}={r.status}" for r in requirements)
@@ -990,6 +1048,8 @@ def run_intake(
     # 判定
     questions: list[str] = []
     pause_reasons: list[str] = []
+    if ai_blocker:
+        pause_reasons.append(ai_blocker)
 
     unreadable = [info for _p, info in records if not info.readable]
     if unreadable:
@@ -1089,7 +1149,7 @@ def run_intake(
         message = f"{'、'.join(blocked_items)}，已写入 questions，补齐后重跑 S1。"
         next_action = "wait"
     else:
-        message = f"暂停：{pause_reasons[0]}；处理后重跑 S1。"
+        message = "暂停：" + "；".join(pause_reasons) + "；处理后重跑 S1。"
         next_action = "wait"
 
     log.append(f"判定 {state}，next_action={next_action}")

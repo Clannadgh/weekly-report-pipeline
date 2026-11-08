@@ -33,7 +33,9 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
    - 还没跑过 S1 → 直接调 run_s1；
    - S1 是暂停或待补充 → 追问缺的那一项（例如「还缺 1 份纪要」），不要列历史运行让用户选；
    - S1 已准入但还没拆卡 → 调 run_s2；
-   - 只有用户明确说「看看以前的运行」时，才调用 list_runs。
+   - 只有用户明确说「看看以前的运行」或问「上次/之前/上次缺什么」时，才调用 list_runs。
+   - 用户问「上次」时，先看 list_runs 返回的 history 和 attempts：同一周期重跑会复用目录，但历次状态和归档都在。
+     不要因为当前只有一个运行目录，就说「之前没有失败的运行」。
 10. list_runs 只返回本次会话的运行记录。别的会话的 w42/w43/w44 不属于当前上下文，不要主动提，
     也不要把它们当成可选项让用户挑。
 11. 用户明确说「不用管」「忽略」「豁免」某条冲突时，调用 waive_conflicts，把用户的原话作为 reason 传进去。
@@ -167,7 +169,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_runs",
-            "description": "列出本次会话内产生过的运行（周期、状态、时间），不含其他会话的历史。",
+            "description": "列出本次会话内产生过的运行（周期、当前状态、时间、同一周期的历次状态 history、归档的详细尝试 attempts），不含其他会话的历史。",
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -443,10 +445,25 @@ class Session:
                 run_id = run.get("period_tag") or folder.name
                 if run_id not in self.run_ids:
                     continue
+                attempts = []
+                attempts_dir = folder / "attempts"
+                if attempts_dir.is_dir():
+                    for path in sorted(attempts_dir.glob("*.json"), reverse=True)[:5]:
+                        archived = _read_json(path)
+                        old_intake = archived.get("intake") or {}
+                        old_status = archived.get("status") or {}
+                        attempts.append({
+                            "at": archived.get("archived_at") or old_status.get("at") or "",
+                            "state": old_intake.get("state") or old_status.get("state") or "",
+                            "message": old_intake.get("message") or old_status.get("note") or "",
+                            "questions": old_intake.get("questions") or [],
+                        })
                 items.append({"run_id": run_id,
                               "dir": run.get("dir") or folder.name,
                               "state": intake.get("state"),
-                              "at": status.get("at") or ""})
+                              "at": status.get("at") or "",
+                              "history": (status.get("history") or [])[-10:],
+                              "attempts": attempts})
         items.sort(key=lambda x: x["at"], reverse=True)
         return {"ok": True, "runs": items}
 

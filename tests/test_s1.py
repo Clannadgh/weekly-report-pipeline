@@ -21,6 +21,7 @@ import inspect
 import os
 
 os.environ.setdefault("S1_USE_AI", "0")  # 测试只验代码路径，不依赖网络
+os.environ.setdefault("S1_ALLOW_RULES", "1")  # 仅测试显式允许规则回退
 import json
 import os
 import shutil

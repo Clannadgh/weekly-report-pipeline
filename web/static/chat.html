@@ -789,7 +789,7 @@ body.drawer-open{overflow:hidden}
     return sec;
   }
 
-  function renderRunDetail(intake) {
+  function renderRunDetail(intake, status) {
     var body = runDetailBody;
     body.textContent = "";
     var state = String(intake.state || "未知");
@@ -890,7 +890,7 @@ body.drawer-open{overflow:hidden}
       });
       problemSec.appendChild(problemList);
       body.appendChild(problemSec);
-    } else {
+    } else if (state === "准入通过") {
       body.appendChild(el("p", "detail-note", "没有未解决的冲突或缺口。"));
     }
 
@@ -899,6 +899,21 @@ body.drawer-open{overflow:hidden}
         ? "可以进入 S2 拆卡。"
         : "先处理上面的问题，再重跑 S1。";
       body.appendChild(el("p", "detail-note", "下一步：" + next));
+    }
+
+    var history = ((status && status.history) || []).slice(-6);
+    if (history.length) {
+      var historySec = detailSection("历史状态");
+      var historyList = el("ul", "detail-list");
+      history.forEach(function (item) {
+        var li = el("li");
+        li.appendChild(el("span", "d-tag " + stateTone(item.state), item.state || "—"));
+        var when = String(item.at || "").replace("T", " ").slice(5, 16);
+        li.appendChild(document.createTextNode((when ? when + " · " : "") + (item.note || "")));
+        historyList.appendChild(li);
+      });
+      historySec.appendChild(historyList);
+      body.appendChild(historySec);
     }
   }
 
@@ -911,7 +926,7 @@ body.drawer-open{overflow:hidden}
       var resp = await fetch("/api/runs/" + encodeURIComponent(runId));
       var data = await resp.json();
       if (!data.intake) throw new Error(data.error || "找不到这次运行");
-      renderRunDetail(data.intake);
+      renderRunDetail(data.intake, data.status || {});
     } catch (err) {
       runDetailBody.textContent = "读取失败：" + (err.message || err);
     }
