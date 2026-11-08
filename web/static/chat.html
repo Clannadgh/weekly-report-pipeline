@@ -159,6 +159,15 @@
 .event-status.warn{border-color:var(--warn);color:var(--warn)}
 .event-status.stop{border-color:var(--danger);color:var(--danger)}
 .event-more{color:var(--muted);font-size:14px;line-height:1;margin-left:1px}
+.event-override{
+  display:inline-flex;align-items:center;
+  padding:2px 9px;border:1px solid #f0dca4;border-radius:999px;
+  background:var(--warn-soft);color:var(--warn);
+  font:inherit;font-size:11.5px;cursor:pointer;
+  transition:background-color .16s var(--ease),border-color .16s var(--ease);
+}
+.event-override:hover{background:#f7e8c3;border-color:var(--warn)}
+.event-override:disabled{opacity:.55;cursor:not-allowed}
 
 /* ---------- 执行过程 ---------- */
 .trace{
@@ -967,6 +976,11 @@ body.drawer-open{overflow:hidden}
         pill.setAttribute("data-state", state || "");
         var circle = pill.querySelector(".event-status");
         if (circle) circle.className = "event-status " + stateTone(state);
+        var bar = pill.parentNode;
+        if (bar) {
+          var extras = bar.querySelectorAll(".event-override");
+          Array.prototype.forEach.call(extras, function (extra) { extra.remove(); });
+        }
       }
     });
   }
@@ -997,11 +1011,17 @@ body.drawer-open{overflow:hidden}
       renderRunDetail(data.intake || {}, data.status || {});
       if (data.note) appendMessage("assistant", data.note);
     } catch (err) {
+      var label = btn.classList.contains("event-override") ? "放权" : "人工放权";
       btn.disabled = false;
-      btn.textContent = "人工放权";
-      var note = el("p", "detail-note", "放权失败：" + (err.message || err));
-      runDetailBody.insertBefore(note, runDetailBody.firstChild);
-      runDetailBody.scrollTop = 0;
+      btn.textContent = label;
+      var text = "放权失败：" + (err.message || err);
+      if (runDetailDialog.open) {
+        var note = el("p", "detail-note", text);
+        runDetailBody.insertBefore(note, runDetailBody.firstChild);
+        runDetailBody.scrollTop = 0;
+      } else {
+        appendMessage("error", text);
+      }
     }
   }
 
@@ -1031,6 +1051,15 @@ body.drawer-open{overflow:hidden}
         pill.title = [ev.tool, ev.run_id, ev.state].filter(Boolean).join(" · ");
       }
       bar.appendChild(pill);
+      if (isS1 && stateTone(ev.state) !== "ok") {
+        var overrideBtn = el("button", "event-override", "放权");
+        overrideBtn.type = "button";
+        overrideBtn.title = "人工放权并重跑 S1";
+        overrideBtn.addEventListener("click", function () {
+          overrideRun(ev.run_id, ev.state, overrideBtn);
+        });
+        bar.appendChild(overrideBtn);
+      }
     });
     host.appendChild(bar);
   }
