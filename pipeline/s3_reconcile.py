@@ -223,7 +223,8 @@ def _slice(frame: pd.DataFrame, date_col: str, start: str, end: str) -> pd.DataF
 # ---------------------------------------------------------------- 判定
 
 def _judge(expect: str, current: float, base: float | None,
-           target: float | None, unit: str) -> tuple[str, float | None, float | None, str]:
+           target: float | None, unit: str,
+           target_text: str = "") -> tuple[str, float | None, float | None, str]:
     """返回 (verdict, diff, change, 说明)。"""
     if expect in ("上升", "下降", "持平"):
         if base is None or base == 0:
@@ -239,7 +240,7 @@ def _judge(expect: str, current: float, base: float | None,
 
     if expect in ("具体数值", "百分比"):
         if target is None:
-            return "unsupported", None, None, "目标值规约不了"
+            return "unsupported", None, None, "目标值「" + str(target_text) + "」折算不出数字"
         diff = current - target
         if unit == "元":
             tolerance = max(TOL_AMOUNT_ABS, abs(target) * TOL_AMOUNT_PCT)
@@ -393,8 +394,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                 verdict = "unsupported"
             if current is None:
                 verdict = "unsupported"
-            note = ("；".join(flag for flag in ask_flags
-                              if not flag.startswith("import:")))[:120]
+            note = _flag_text(ask_flags)[:160]
             stats.ok += 1 if out.get("status") != "parse_failed" else 0
             if out.get("status") == "parse_failed":
                 stats.parse_failed += 1
@@ -426,7 +426,9 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                 except Exception:
                     base = None
             target = _parse_target(card.get("target_value"))
-            verdict, diff, change, note = _judge(expect, current, base, target, unit)
+            verdict, diff, change, note = _judge(
+                expect, current, base, target, unit,
+                str(card.get("target_value") or ""))
             qhash = _qhash(card_id, entity, metric)
             stats.ok += 1
 
@@ -436,7 +438,8 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                 id="Q" + str(len(issues) + 1).zfill(2), level="信息", type="caliber",
                 card=card_id, subject=entity + " " + metric, minutes_said=quote,
                 raw="", question_hash=qhash,
-                suggest=("取不到数：" + note) if note else "口径不可得，正文不引用该结论"))
+                suggest=("无法比对：" + note + "；正文只写纪要原话，不给具体数"
+                         if note else "口径不可得，正文不引用该结论")))
             continue
 
         key = "_".join([
@@ -490,7 +493,8 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                 card=card_id, subject=entity + " " + metric, minutes_said=quote,
                 raw=_display(current, unit), value=float(current),
                 question_hash=qhash,
-                suggest=note or "口径不足，正文不引用该结论"))
+                suggest=((note + "；正文只写纪要原话，不给具体数")
+                         if note else "口径不足，正文不引用该结论")))
             stats.checked -= 1
 
     result.coverage = _coverage(intake, ledger)
@@ -499,9 +503,12 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         stats.info += 1
         issues.append(IssueItem(
             id="Q" + str(len(issues) + 1).zfill(2), level="信息", type="missing",
-            card="", subject=item["item"], minutes_said="S1 需求矩阵",
+            card="", subject=item["item"],
+            minutes_said="纪要提到「" + item["item"] + "」，数据里没有对应字段",
             raw="", question_hash=_qhash("coverage", item["item"]),
-            suggest="正文写无数据来源：" + (item["note"] or "该指标没有被任何卡片覆盖")
+            suggest=("数据里没有对应列，正文写「无数据来源」"
+                     if "没有对应列" in str(item.get("note") or "")
+                     else "正文写「无数据来源」：" + str(item.get("note") or "该指标没有被任何卡片覆盖"))
 
         ))
 
@@ -713,6 +720,34 @@ def _ask_card(qa, card: dict, column: str, entity: str,
     out = qa.ask(question, **kwargs)
     out["question"] = question
     return out
+
+
+FLAG_TEXT = {
+    "reference_unparsed": "目标值无法折算成数字",
+    "unit_pct_suspect": "答案缺百分号，已重问仍不合格",
+    "tolerance_unparsed": "容差写法不认识",
+    "tolerance_missing": "没给容差，判定按 0 处理",
+    "code_unavailable": "拿不到执行代码",
+    "empty_rows": "该对象本期无记录",
+    "unit_wan_normalized": "万元已折成元",
+    "unit_yi_normalized": "亿元已折成元",
+    "unit_pct_normalized": "百分比已折成小数",
+    "pct_tolerance_without_ref": "容差的百分比部分没有参考值可乘",
+    "import:pandas": "",
+}
+
+
+def _flag_text(flags: list[str]) -> str:
+    parts: list[str] = []
+    for flag in flags:
+        if not flag or flag.startswith("import:") or flag.startswith("call_failed"):
+            if flag.startswith("call_failed"):
+                parts.append("调用失败：" + flag.split(":", 1)[-1])
+            continue
+        text = FLAG_TEXT.get(flag, flag)
+        if text and text not in parts:
+            parts.append(text)
+    return "；".join(parts)
 
 
 def _write(run_dir: Path, result: IssuesResult, ledger: Ledger) -> None:
