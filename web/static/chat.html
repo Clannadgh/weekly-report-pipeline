@@ -412,6 +412,23 @@ body.drawer-open{overflow:hidden}
 .d-tag.warn{background:var(--warn-soft);color:var(--warn)}
 .d-tag.stop{background:var(--danger-soft);color:var(--danger)}
 
+.s2-detail-dialog{max-width:1040px}
+.s2-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+.s2-stat{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted)}
+.s2-stat .k{font-size:11px;color:var(--muted)}
+.s2-stat .v{margin-top:2px;font-size:20px;font-weight:600;line-height:1.25;color:var(--ink)}
+.s2-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+.s2-table{border-collapse:collapse;width:100%;min-width:760px;font-size:12px}
+.s2-table th{
+  padding:8px 9px;text-align:left;font-weight:600;white-space:nowrap;
+  color:var(--ink-2);background:var(--surface-muted);border-bottom:1px solid var(--line);
+}
+.s2-table td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2);line-height:1.55}
+.s2-table tr:last-child td{border-bottom:0}
+.s2-table .quote{min-width:220px;white-space:normal}
+.s2-table .s2-source{min-width:110px;max-width:170px;overflow-wrap:anywhere}
+.s2-table .nowrap{white-space:nowrap}
+
 @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
 @keyframes slideIn{from{opacity:.5;transform:translateX(28px)}to{opacity:1;transform:none}}
@@ -460,6 +477,7 @@ body.drawer-open{overflow:hidden}
   .detail-body{padding:14px}
   .detail-foot{padding:12px 16px}
   .detail-meta{grid-template-columns:1fr}
+  .s2-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:560px){
   .nav a.runs-link{display:none}
@@ -590,6 +608,21 @@ body.drawer-open{overflow:hidden}
   </section>
 </dialog>
 
+<dialog class="detail-dialog s2-detail-dialog" id="s2DetailDialog" aria-labelledby="s2DetailTitle">
+  <section class="detail-card">
+    <header class="detail-head">
+      <div>
+        <div class="detail-kicker">S2 纪要拆卡</div>
+        <h2 id="s2DetailTitle">拆卡详情</h2>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-square" id="s2DetailClose" type="button" aria-label="关闭拆卡详情">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="detail-body" id="s2DetailBody">正在读取…</div>
+  </section>
+</dialog>
+
 <script>
 (function () {
   "use strict";
@@ -625,6 +658,10 @@ body.drawer-open{overflow:hidden}
   var runDetailBody = document.getElementById("runDetailBody");
   var runDetailFoot = document.getElementById("runDetailFoot");
   var runDetailClose = document.getElementById("runDetailClose");
+  var s2DetailDialog = document.getElementById("s2DetailDialog");
+  var s2DetailTitle = document.getElementById("s2DetailTitle");
+  var s2DetailBody = document.getElementById("s2DetailBody");
+  var s2DetailClose = document.getElementById("s2DetailClose");
 
   var LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 17v-4.5M12 17V7M17 17v-7"/></svg>';
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>';
@@ -728,14 +765,12 @@ body.drawer-open{overflow:hidden}
           text.appendChild(btn);
         }
       }
-      if ((stage.key === "s2" || stage.key === "s3") && data && data.run) {
-        var page = stage.key === "s2" ? "/s2.html" : "/s3.html";
+      if (stage.key === "s2" && data && data.run) {
         li.classList.add("clickable");
-        li.setAttribute("role", "link");
+        li.setAttribute("role", "button");
         li.setAttribute("tabindex", "0");
-        var openStage = function () {
-          window.open(page + "?run=" + encodeURIComponent(data.run), "_blank", "noopener");
-        };
+        li.setAttribute("aria-label", "查看 S2 拆卡详情");
+        var openStage = function () { openS2Detail(data.run); };
         li.addEventListener("click", openStage);
         li.addEventListener("keydown", function (event) {
           if (event.key === "Enter" || event.key === " ") {
@@ -743,7 +778,7 @@ body.drawer-open{overflow:hidden}
             openStage();
           }
         });
-        text.appendChild(el("div", "pipeline-open", "查看详细 →"));
+        text.appendChild(el("div", "pipeline-open", "查看详情 →"));
       }
       li.appendChild(text);
       pipelineList.appendChild(li);
@@ -1150,6 +1185,155 @@ body.drawer-open{overflow:hidden}
     }
   }
 
+  function s2Tone(state) {
+    if (state === "ok") return "ok";
+    if (state === "empty") return "warn";
+    if (state === "blocked") return "stop";
+    return "neutral";
+  }
+
+  function s2StateLabel(state) {
+    if (state === "ok") return "拆卡完成";
+    if (state === "empty") return "没有卡片";
+    if (state === "blocked") return "未通过";
+    return String(state || "未知");
+  }
+
+  function renderS2Detail(cards) {
+    var body = s2DetailBody;
+    body.textContent = "";
+    body.scrollTop = 0;
+    var state = String(cards.state || "");
+    var tone = s2Tone(state);
+
+    var bar = el("div", "detail-state " + tone);
+    bar.appendChild(el("span", "d-state-badge", s2StateLabel(state)));
+    bar.appendChild(el("span", "detail-state-msg", cards.message || ""));
+    body.appendChild(bar);
+
+    var meta = [cards.run_id, cards.source, cards.period, cards.model].filter(Boolean).join(" · ");
+    if (meta) body.appendChild(el("p", "detail-note", meta));
+
+    var stats = cards.stats || {};
+    var grid = el("div", "s2-stats");
+    [
+      ["卡片总数", stats.cards || 0],
+      ["可对数据", stats.checkable || 0],
+      ["实体不确定", stats.unknown_entity || 0],
+      ["动作项", stats.actions || 0]
+    ].forEach(function (item) {
+      var box = el("div", "s2-stat");
+      box.appendChild(el("div", "k", item[0]));
+      box.appendChild(el("div", "v", String(item[1])));
+      grid.appendChild(box);
+    });
+    body.appendChild(grid);
+
+    var list = cards.cards || [];
+    if (list.length) {
+      var cardSec = detailSection("卡片");
+      var wrap = el("div", "s2-table-wrap");
+      var table = el("table", "s2-table");
+      var thead = el("thead");
+      var headRow = el("tr");
+      ["#", "原话", "实体", "指标", "期望", "目标值", "单位", "可核对", "出处"].forEach(function (text) {
+        headRow.appendChild(el("th", "", text));
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      var tbody = el("tbody");
+      list.forEach(function (card) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "nowrap", card.id || ""));
+        var quote = el("td", "quote", card.quote || "");
+        if (card.note) quote.appendChild(el("span", "detail-sub", card.note));
+        tr.appendChild(quote);
+        var entity = el("td", "", card.entity || "不确定");
+        if (card.entity_type) entity.appendChild(el("span", "detail-sub", card.entity_type));
+        tr.appendChild(entity);
+        tr.appendChild(el("td", "nowrap", card.metric || "其他"));
+        tr.appendChild(el("td", "nowrap", card.expect || "说不清"));
+        var target = (card.target_value === null || card.target_value === undefined || card.target_value === "")
+          ? "—" : String(card.target_value);
+        tr.appendChild(el("td", "nowrap", target));
+        tr.appendChild(el("td", "nowrap", card.unit || "—"));
+        var check = el("td", "nowrap");
+        var checkTone = card.checkable === "能" ? "ok" : (card.checkable === "不确定" ? "warn" : "stop");
+        check.appendChild(el("span", "d-tag " + checkTone, card.checkable || "—"));
+        tr.appendChild(check);
+        tr.appendChild(el("td", "detail-sub s2-source", card.source || ""));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      cardSec.appendChild(wrap);
+      body.appendChild(cardSec);
+    } else {
+      body.appendChild(el("p", "detail-note", "没有可展示的卡片。"));
+    }
+
+    if ((cards.actions || []).length) {
+      var actionSec = detailSection("动作项");
+      var actionList = el("ul", "detail-list");
+      cards.actions.forEach(function (item) {
+        var li = el("li");
+        li.appendChild(el("span", "d-tag", "动作"));
+        li.appendChild(document.createTextNode(
+          (item.item || "") +
+          (item.owner ? " · " + item.owner : "") +
+          (item.due ? " · 截止 " + item.due : "")
+        ));
+        if (item.source) li.appendChild(el("div", "detail-sub", item.source));
+        actionList.appendChild(li);
+      });
+      actionSec.appendChild(actionList);
+      body.appendChild(actionSec);
+    }
+
+    if ((cards.future || []).length) {
+      var futureSec = detailSection("未来事项");
+      var futureList = el("ul", "detail-list");
+      cards.future.forEach(function (item) {
+        var li = el("li", "", item.text || "");
+        if (item.source) li.appendChild(el("div", "detail-sub", item.source));
+        futureList.appendChild(li);
+      });
+      futureSec.appendChild(futureList);
+      body.appendChild(futureSec);
+    }
+
+    if ((cards.dropped || []).length) {
+      var dropSec = detailSection("校验丢弃");
+      var dropList = el("ul", "detail-list");
+      cards.dropped.forEach(function (text) { dropList.appendChild(el("li", "", text)); });
+      dropSec.appendChild(dropList);
+      body.appendChild(dropSec);
+    }
+
+    if ((cards.questions || []).length) {
+      var qSec = detailSection("需要核对");
+      var qList = el("ul", "detail-list");
+      cards.questions.forEach(function (text) { qList.appendChild(el("li", "", text)); });
+      qSec.appendChild(qList);
+      body.appendChild(qSec);
+    }
+  }
+
+  async function openS2Detail(runId) {
+    if (!runId) return;
+    s2DetailTitle.textContent = "S2 · " + String(runId).toUpperCase();
+    s2DetailBody.textContent = "正在读取…";
+    if (!s2DetailDialog.open) s2DetailDialog.showModal();
+    try {
+      var resp = await fetch("/api/s2/" + encodeURIComponent(runId));
+      var data = await resp.json();
+      if (!data.ok || !data.cards) throw new Error(data.error || "没有这次拆卡结果");
+      renderS2Detail(data.cards);
+    } catch (err) {
+      s2DetailBody.textContent = "读取失败：" + (err.message || err);
+    }
+  }
+
   function updateS1Pill(tag, state) {
     var pills = messages.querySelectorAll(".event-link");
     Array.prototype.forEach.call(pills, function (pill) {
@@ -1545,6 +1729,11 @@ body.drawer-open{overflow:hidden}
   runDetailClose.addEventListener("click", function () { runDetailDialog.close(); });
   runDetailDialog.addEventListener("click", function (event) {
     if (event.target === runDetailDialog) runDetailDialog.close();
+  });
+
+  s2DetailClose.addEventListener("click", function () { s2DetailDialog.close(); });
+  s2DetailDialog.addEventListener("click", function (event) {
+    if (event.target === s2DetailDialog) s2DetailDialog.close();
   });
 
   function setBusy(busy) {
