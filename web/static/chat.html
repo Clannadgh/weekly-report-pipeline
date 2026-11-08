@@ -20,6 +20,7 @@
 }
 .brand{display:flex;align-items:center;gap:10px;color:var(--ink);font-size:15px;font-weight:600;letter-spacing:.01em}
 .brand:hover{color:var(--ink)}
+.brand-name{white-space:nowrap}
 .brand-mark{
   width:28px;height:28px;flex:none;border-radius:9px;
   display:grid;place-items:center;color:#fff;
@@ -28,7 +29,7 @@
 }
 .brand-mark svg{width:16px;height:16px}
 .nav{display:flex;align-items:center;gap:2px;margin-left:auto}
-.nav a{color:var(--muted);font-size:13px;padding:6px 10px;border-radius:8px;transition:background-color .16s var(--ease),color .16s var(--ease)}
+.nav a{color:var(--muted);font-size:13px;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:background-color .16s var(--ease),color .16s var(--ease)}
 .nav a:hover{color:var(--ink);background:var(--surface-muted)}
 .top-actions{display:flex;align-items:center;gap:6px;margin-left:4px}
 .top-actions .btn{color:var(--muted)}
@@ -57,18 +58,12 @@
 .welcome-mark svg{width:26px;height:26px}
 .welcome h1{margin:0 0 8px;font-size:24px;line-height:1.35;font-weight:600;letter-spacing:-.01em}
 .welcome > p{margin:0 auto;max-width:470px;font-size:13.5px;line-height:1.7;color:var(--muted)}
-.prompt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:26px;text-align:left}
+.prompt-label{margin:26px 0 0;font-size:11.5px;line-height:1.5;color:#9a9389;text-align:left}
+.prompt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:8px;text-align:left}
 .prompt-card{
   display:flex;flex-direction:column;align-items:flex-start;gap:0;
   padding:14px;border:1px solid var(--line);border-radius:14px;
-  background:var(--surface);text-align:left;font:inherit;color:inherit;
-  transition:transform .16s var(--ease),border-color .16s var(--ease),box-shadow .16s var(--ease),background-color .16s var(--ease);
-}
-.prompt-card:hover{
-  transform:translateY(-2px);
-  border-color:var(--line-strong);
-  background:#fff;
-  box-shadow:var(--shadow-sm);
+  background:var(--surface);text-align:left;
 }
 .prompt-icon{
   width:30px;height:30px;margin-bottom:10px;border-radius:9px;
@@ -320,7 +315,8 @@ body.drawer-open{overflow:hidden}
   .welcome{margin-top:5vh}
   .welcome h1{font-size:21px}
   .welcome > p{font-size:13px}
-  .prompt-grid{grid-template-columns:1fr;gap:8px;margin-top:20px}
+  .prompt-label{margin-top:20px}
+  .prompt-grid{grid-template-columns:1fr;gap:8px;margin-top:8px}
   .prompt-card{flex-direction:row;align-items:center;gap:10px;padding:12px}
   .prompt-icon{margin:0}
   .msg{gap:10px;margin-bottom:22px}
@@ -332,6 +328,9 @@ body.drawer-open{overflow:hidden}
 }
 @media (max-width:560px){
   .nav a.runs-link{display:none}
+}
+@media (max-width:480px){
+  .brand-name{display:none}
 }
 </style>
 </head>
@@ -390,20 +389,21 @@ body.drawer-open{overflow:hidden}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 17.5v-5M12 17.5V6.5M17.5 17.5v-8"/></svg>
     </div>
     <h1>这周想先看什么？</h1>
-    <p>把销售数据和会议纪要放进来，直接说要什么。<br>数字与结论都由工具给出，助手只负责转述。</p>
+    <p>把销售数据和会议纪要放进来，在下方输入框直接说要什么。<br>数字与结论都由工具给出，助手只负责转述。</p>
+    <p class="prompt-label">示例说法</p>
     <div class="prompt-grid">
-      <button class="prompt-card" type="button" data-prompt="请按 2026 年第 44 周（10 月 26 日至 11 月 1 日）出经营周报，覆盖全公司及四个区域。">
+      <div class="prompt-card">
         <span class="prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M12 16V7M16 16v-3"/></svg></span>
         <span class="prompt-text"><span class="prompt-title">出本周经营周报</span><span class="prompt-desc">全公司 + 四个区域</span></span>
-      </button>
-      <button class="prompt-card" type="button" data-prompt="四个区域本周的达成情况怎么样？和上周比有哪些变化？">
+      </div>
+      <div class="prompt-card">
         <span class="prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.3 7-11a7 7 0 1 0-14 0c0 5.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
         <span class="prompt-text"><span class="prompt-title">看区域达成</span><span class="prompt-desc">本周与上周的差异</span></span>
-      </button>
-      <button class="prompt-card" type="button" data-prompt="S1 的准入结果是什么？有哪些数据缺口？">
+      </div>
+      <div class="prompt-card">
         <span class="prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg></span>
         <span class="prompt-text"><span class="prompt-title">查 S1 准入结果</span><span class="prompt-desc">判定、缺口与建议</span></span>
-      </button>
+      </div>
     </div>
     <p class="welcome-note">支持 csv / xlsx / md / txt / docx，可多选</p>
   </section>
@@ -985,21 +985,6 @@ body.drawer-open{overflow:hidden}
       confirmResolve = null;
       done(ok);
     }
-  });
-
-  messages.addEventListener("click", function (event) {
-    var card = event.target.closest("[data-prompt]");
-    if (!card || sendBtn.disabled) return;
-    var prompt = card.getAttribute("data-prompt");
-    if (!prompt) return;
-    input.value = prompt;
-    resizeInput();
-    if (!picked.length && !sessionId) {
-      setBound("先把数据文件和纪要选进来，再点发送。");
-      input.focus();
-      return;
-    }
-    send();
   });
 
   function setBusy(busy) {
