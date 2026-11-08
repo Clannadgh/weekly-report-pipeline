@@ -248,6 +248,17 @@ def _slice(frame: pd.DataFrame, date_col: str, start: str, end: str) -> pd.DataF
 
 # ---------------------------------------------------------------- 判定
 
+def _ask_amount(qa, column: str, entity: str, metric: str, period: str) -> float | None:
+    """单独取本期金额，供台账建一条可被 S4 引用的金额键。"""
+    question = _build_question(column, entity, metric, period, "", False)
+    try:
+        out = qa.ask(question, expect_shape="number", use_cache=False)
+    except Exception:  # noqa: BLE001
+        return None
+    value = out.get("value")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 def _judge(expect: str, current: float, base: float | None,
            target: float | None, unit: str,
            target_text: str = "") -> tuple[str, float | None, float | None, str]:
@@ -377,10 +388,12 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         code_hash = "内置规则"
         change = None
         diff = None
+        amount_value: float | None = None
         ask_flags: list[str] = []
 
         ratio_card = (_parse_ratio_quote(quote)
                       if expect in ("具体数值", "百分比") else None)
+        is_change_card = expect in ("上升", "下降", "持平")
         if ratio_card is not None:
             unit = "倍"
         if ratio_card is not None and qa is None:
@@ -432,6 +445,9 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                          if code else "无代码")
             if out.get("status") == "parse_failed":
                 ask_flags = ask_flags + ["重问后仍解析失败"]
+            if (is_change_card and current is not None
+                    and out.get("status") == "ok"):
+                amount_value = _ask_amount(qa, qa_column, entity, metric, period)
             if out.get("fallback") or verdict == "none":
                 verdict = "unsupported"
             if any(flag.startswith("reference_unparsed") for flag in ask_flags):
@@ -505,6 +521,21 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                   "口径为" + metric + "求和"),
             question_hash=qhash, code_hash=code_hash,
             status="ok", verdict=verdict, diff=diff, shape="number"))
+
+        if amount_value is not None:
+            amount_key = "_".join([
+                GRAN_ABBR.get(entity_type, "entity"),
+                _slug(entity), "amt", result.run_id or "w00",
+            ])
+            ledger.entries.append(LedgerEntry(
+                key=amount_key, value=float(amount_value), unit="元",
+                display=_display(amount_value, "元"),
+                spec=("数据来自" + source + "；按记录ID保留第一条；时间范围 "
+                      + period + "；筛选 " + column + " 为 " + entity
+                      + "；口径为实收金额合计"),
+                question_hash=_qhash(card_id, "amount", period),
+                code_hash=code_hash, status="ok", verdict="none",
+                diff=None, shape="number"))
 
         if ratio_card is not None:
             left_name, right_name = ratio_card[0], ratio_card[1]
