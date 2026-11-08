@@ -123,6 +123,14 @@ class RunInfo(BaseModel):
     dir: str = ""                  # runs/w44（相对项目根）
 
 
+class Waiver(BaseModel):
+    """一条人工豁免：人确认「已知悉，接受这个冲突」，不是工具判错了。"""
+    at: str = ""
+    by: str = ""
+    items: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
 class IntakeResult(BaseModel):
     state: IntakeState
     run: RunInfo = Field(default_factory=RunInfo)
@@ -136,6 +144,7 @@ class IntakeResult(BaseModel):
     missing: list[MissingItem] = Field(default_factory=list)
     degrade: list[DegradeItem] = Field(default_factory=list)
     questions: list[str] = Field(default_factory=list)
+    waived: list[Waiver] = Field(default_factory=list)
     message: str = ""
     next_action: NextAction = "wait"
 

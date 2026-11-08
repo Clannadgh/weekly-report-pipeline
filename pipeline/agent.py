@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import uuid
 from pathlib import Path
@@ -34,6 +35,10 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
    - 只有用户明确说「看看以前的运行」时，才调用 list_runs。
 10. list_runs 只返回本次会话的运行记录。别的会话的 w42/w43/w44 不属于当前上下文，不要主动提，
     也不要把它们当成可选项让用户挑。
+11. 用户明确说「不用管」「忽略」「豁免」某条冲突时，调用 waive_conflicts，把用户的原话作为 reason 传进去。
+    这是人工裁决，不是工具改判：豁免会写进 waiver.json，S8 归档时能查到是谁、什么时候、为什么放行。
+    用户没说之前，绝不自己决定忽略。
+12. 豁免后必须重跑一次 S1，以新的 state 为准；不要假设豁免一定会让状态变成准入通过。
 """
 
 TOOLS = [
@@ -65,6 +70,27 @@ TOOLS = [
                     "section": {"type": "string"},
                 },
                 "required": ["run_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "waive_conflicts",
+            "description": ("把用户明确要求忽略的冲突登记为人工豁免，并重跑 S1。"
+                            "items 传要豁免的冲突关键词（取自 questions 原文），"
+                            "reason 传用户的原话。只有用户明确说忽略/不用管/豁免时才能调用。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要豁免的冲突关键词，如「栗子蒙布朗」",
+                    },
+                    "reason": {"type": "string", "description": "用户给出的理由原话"},
+                },
+                "required": ["items", "reason"],
             },
         },
     },
@@ -128,6 +154,7 @@ class Session:
         self.spec_path = Path(spec_path) if spec_path else None
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM}]
         self.last_run = ""
+        self.last_prompt = ""
         self.run_ids: list[str] = []
         self.thoughts: list[str] = []
         self.progress: dict = {
@@ -158,7 +185,8 @@ class Session:
     def _run_s1(self, args: dict, fallback_prompt: str) -> dict:
         if not self.files:
             return {"ok": False, "error": "本次会话还没有上传文件，请先上传数据文件和纪要。"}
-        prompt = str(args.get("prompt") or fallback_prompt or "").strip()
+        prompt = str(args.get("prompt") or fallback_prompt or self.last_prompt or "").strip()
+        self.last_prompt = prompt
         self.progress = {"started": False, "finished": False, "current": -1,
                          "detail": "", "steps": list(STEPS),
                          "states": ["pending"] * len(STEPS)}
@@ -231,9 +259,36 @@ class Session:
         items.sort(key=lambda x: x["at"], reverse=True)
         return {"ok": True, "runs": items}
 
+    def _waive_conflicts(self, args: dict) -> dict:
+        """登记人工豁免，然后重跑 S1。豁免只对本次运行生效，写进 waiver.json 留痕。"""
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        items = [str(x).strip() for x in (args.get("items") or []) if str(x).strip()]
+        reason = str(args.get("reason") or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先调 run_s1。"}
+        if not items:
+            return {"ok": False, "error": "没有给要豁免的冲突关键词。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到这次运行：" + run_id}
+        payload = {
+            "at": dt.datetime.now().isoformat(timespec="seconds"),
+            "by": "用户",
+            "items": items,
+            "reason": reason or "用户确认可忽略",
+        }
+        (folder / "waiver.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        summary = self._run_s1({"prompt": self.last_prompt}, self.last_prompt)
+        summary["waived"] = items
+        summary["waiver_reason"] = payload["reason"]
+        return summary
+
     def _execute(self, name: str, args: dict, fallback_prompt: str) -> dict:
         if name == "run_s1":
             return self._run_s1(args, fallback_prompt)
+        if name == "waive_conflicts":
+            return self._waive_conflicts(args)
         if name == "get_run":
             return self._get_run(args)
         if name == "list_runs":

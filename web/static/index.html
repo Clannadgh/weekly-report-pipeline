@@ -345,6 +345,8 @@
 .chat-link.ghost{background:#fff;color:var(--accent);border:1px solid #c3ccd6}
 .chat-link.ghost:hover{background:#f1f6fd}
 .headlinks{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  button.mini.waive{margin-left:8px;border-color:#e0b7b3;color:var(--stop);font-size:11.5px;padding:2px 8px}
+  button.mini.waive:hover{background:#fdeceb}
 </style>
 </head>
 <body>
@@ -707,6 +709,12 @@
         arr(entry.subs).forEach(function (sub) {
           if (sub) { li.appendChild(el("span", "li-sub", String(sub))); }
         });
+        if (entry.action) {
+          var act = el("button", "mini waive", entry.action.label);
+          act.type = "button";
+          act.addEventListener("click", function () { entry.action.onClick(act); });
+          li.appendChild(act);
+        }
       } else {
         li.appendChild(document.createTextNode(String(entry)));
       }
@@ -720,9 +728,18 @@
     var consistency = obj(intake.consistency);
 
     var conflicts = [];
+    var runTag = String(obj(intake.run).period_tag || "");
     arr(consistency.conflicts).forEach(function (raw) {
       var c = obj(raw);
-      conflicts.push({ main: (c.kind ? "【" + c.kind + "】" : "") + dash(c.detail), subs: [] });
+      var detail = dash(c.detail);
+      conflicts.push({
+        main: (c.kind ? "【" + c.kind + "】" : "") + detail,
+        subs: [],
+        action: runTag ? {
+          label: "忽略此项",
+          onClick: function (btn) { waiveConflict(runTag, detail, btn); }
+        } : null
+      });
     });
     arr(consistency.column_mismatch).forEach(function (raw) {
       var c = obj(raw);
@@ -772,6 +789,37 @@
     grid.appendChild(buildGapBox("降级项", degrade));
     grid.appendChild(buildGapBox("待确认问题", questions));
     return grid;
+  }
+
+  function waiveConflict(tag, detail, btn) {
+    var keyword = (String(detail).match(/「([^」]+)」/) || [null, String(detail)])[1];
+    var reason = window.prompt(
+      "忽略「" + keyword + "」的理由（会写进归档记录，供以后追溯）",
+      "人工确认不影响本期结论"
+    );
+    if (reason === null) return;
+    btn.disabled = true;
+    btn.textContent = "处理中…";
+    fetch("/api/runs/" + encodeURIComponent(tag) + "/waive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: [keyword], reason: reason })
+    })
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data.ok) {
+          showError(data.error || "豁免失败", data.detail || "");
+          btn.disabled = false;
+          btn.textContent = "忽略此项";
+          return;
+        }
+        renderResult(obj(data.intake), obj(data.status));
+      })
+      .catch(function (err) {
+        showError("豁免请求失败", err.message);
+        btn.disabled = false;
+        btn.textContent = "忽略此项";
+      });
   }
 
   function copyText(text) {

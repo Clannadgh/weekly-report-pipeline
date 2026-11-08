@@ -444,6 +444,65 @@ class Handler(BaseHTTPRequestHandler):
             body = handle.read()
         self._send(200, body, "text/html; charset=utf-8")
 
+    def handle_waive(self, tag: str) -> None:
+        """登记人工豁免并重跑 S1。不改判定规则，只是把「人已确认接受」记下来。"""
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        items = [str(x).strip() for x in (payload.get("items") or []) if str(x).strip()]
+        if not items:
+            self.send_error_json(400, "没有给要豁免的冲突关键词", "")
+            return
+        reason = str(payload.get("reason") or "").strip() or "用户确认可忽略"
+        waiver = {
+            "at": dt.datetime.now().isoformat(timespec="seconds"),
+            "by": str(payload.get("by") or "用户"),
+            "items": items,
+            "reason": reason,
+        }
+        try:
+            with open(os.path.join(folder, "waiver.json"), "w", encoding="utf-8") as fh:
+                json.dump(waiver, fh, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            self.send_error_json(500, "写 waiver.json 失败", str(exc))
+            return
+
+        # 用 inputs/ 里的原始副本重跑，保证和上次读的是同一批文件
+        intake_path = os.path.join(folder, "intake.json")
+        intake = try_read_json(intake_path)
+        prompt = ""
+        prompt_file = os.path.join(folder, "prompt.txt")
+        if os.path.isfile(prompt_file):
+            with open(prompt_file, encoding="utf-8") as fh:
+                prompt = fh.read().strip()
+        if not prompt:
+            prompt = str((intake.get("prompt") or {}).get("goal") or "").strip()
+        inputs_dir = os.path.join(folder, "inputs")
+        files = []
+        if os.path.isdir(inputs_dir):
+            files = [os.path.join(inputs_dir, name) for name in sorted(os.listdir(inputs_dir))
+                     if os.path.isfile(os.path.join(inputs_dir, name))]
+        if not files or not prompt:
+            self.send_error_json(400, "缺少原始输入或提示词，无法重跑 S1",
+                                 "inputs 目录为空或 prompt.txt 缺失")
+            return
+
+        try:
+            from pipeline.s1_intake import run_intake
+
+            result, _status, logs = run_intake([Path(p) for p in files], prompt,
+                                               Path(RUNS_DIR))
+        except Exception as exc:  # noqa: BLE001
+            log("豁免后重跑 S1 失败：" + repr(exc))
+            self.send_error_json(500, "重跑 S1 失败", traceback.format_exc())
+            return
+        log("人工豁免 " + ",".join(items) + " → " + result.state)
+        self.send_json({"ok": True, "intake": to_plain(result), "waiver": waiver, "log": logs})
+
     def serve_s2_cards(self, tag: str) -> None:
         """读某次运行已落盘的 cards.json；没拆过就明确说没有，不现场补跑。"""
         folder = resolve_run_dir(unquote(tag))
@@ -674,6 +733,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/llm/test":
             self.handle_llm_test()
+            return
+        if path.startswith("/api/runs/") and path.endswith("/waive"):
+            self.handle_waive(path[len("/api/runs/"):-len("/waive")])
             return
         if path == "/api/s2":
             self.handle_s2()

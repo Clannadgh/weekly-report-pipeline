@@ -11,11 +11,13 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 
 from .models import (
+    Waiver,
     ColumnMismatch,
     Conflict,
     Consistency,
@@ -578,30 +580,50 @@ def _relative_dir(path: Path) -> str:
 
 
 def _copy_inputs(paths: list[Path], run_dir: Path, log: list[str]) -> dict[str, str]:
+    """把输入复制到 <run>/inputs。
+
+    先把文件搬到临时中转目录，再清空 inputs，最后从中转目录放进去。
+    这样即使源文件本身就在 inputs 里（用历史运行重跑），也不会被清理动作删掉。
+    """
     target = run_dir / "inputs"
-    if target.exists():
-        # 复用同一周的目录时，先清掉上一批输入，避免新旧文件混在一起被下游读到
-        for old in target.iterdir():
-            try:
-                shutil.rmtree(old) if old.is_dir() else old.unlink()
-            except OSError as exc:
-                log.append(f"清理旧输入 {old.name} 失败：{exc}")
-    target.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix="s1_inputs_"))
     mapping: dict[str, str] = {}
     used: dict[str, int] = {}
-    for path in paths:
-        name = path.name
-        seen = used.get(name, 0)
-        used[name] = seen + 1
-        if seen:
-            name = f"{path.stem}_{seen + 1}{path.suffix}"
-        try:
-            shutil.copy2(path, target / name)
-        except OSError as exc:
-            log.append(f"复制 {path.name} 到 inputs 失败：{exc}")
-            continue
-        mapping[_path_key(path)] = f"inputs/{name}"
-        log.append(f"复制输入 {path.name} → inputs/{name}")
+    staged: list[tuple[Path, str, Path]] = []
+    try:
+        for path in paths:
+            name = path.name
+            seen = used.get(name, 0)
+            used[name] = seen + 1
+            if seen:
+                name = f"{path.stem}_{seen + 1}{path.suffix}"
+            temp = staging / name
+            try:
+                shutil.copy2(path, temp)
+            except OSError as exc:
+                log.append(f"复制 {path.name} 到中转目录失败：{exc}")
+                continue
+            staged.append((path, name, temp))
+
+        if target.exists():
+            # 复用同一周的目录时清掉上一批，避免新旧文件混在一起被下游读到
+            for old in target.iterdir():
+                try:
+                    shutil.rmtree(old) if old.is_dir() else old.unlink()
+                except OSError as exc:
+                    log.append(f"清理旧输入 {old.name} 失败：{exc}")
+        target.mkdir(parents=True, exist_ok=True)
+
+        for path, name, temp in staged:
+            try:
+                shutil.move(str(temp), str(target / name))
+            except OSError as exc:
+                log.append(f"放置 {name} 到 inputs 失败：{exc}")
+                continue
+            mapping[_path_key(path)] = f"inputs/{name}"
+            log.append(f"复制输入 {path.name} → inputs/{name}")
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     return mapping
 
 
@@ -626,6 +648,28 @@ def _load_history(status_file: Path) -> list[StatusHistory]:
 
 
 # ---------------------------------------------------------------- 主流程
+
+def _norm_text(value: str) -> str:
+    """去掉所有空白：数据里的「成 都春熙路店」和纪要里的「成都春熙路店」算同一个。"""
+    return re.sub(r"[s　]+", "", str(value or ""))
+
+
+def _entity_known(value: str, known_norm: set[str]) -> bool:
+    """实体是否存在。允许简称：纪要写「静安店」，数据是「上海静安店」。"""
+    text = _norm_text(value)
+    if not text:
+        return True
+    if re.fullmatch(r"d{4}[-/年]d{1,2}[-/月]d{1,2}日?", text):
+        return True
+    if text in known_norm:
+        return True
+    if len(text) < 3:
+        return False
+    for known in known_norm:
+        if len(known) >= 3 and (text in known or known in text):
+            return True
+    return False
+
 
 def _requirements_from_map(mapping, data_recs: list[tuple[Path, FileInfo]]):
     """把 AI 的映射转成需求矩阵；通过与否仍按列是否存在来判。"""
@@ -925,10 +969,10 @@ def run_intake(
                     f"{prompt_span[0].isocalendar()[1]} 周")))
     if domain is not None and minutes_text:
         known_values = set(vocab) if "vocab" in locals() else set()
+        known_norm = {_norm_text(value) for value in known_values if _norm_text(value)}
         for entity in domain.entities:
             unknown = [value for value in entity.values
-                       if value not in known_values
-                       and not re.fullmatch(r"d{4}s*[-/年]s*d{1,2}s*[-/月]s*d{1,2}s*日?", value)]
+                       if not _entity_known(value, known_norm)]
             if unknown:
                 consistency.conflicts.append(Conflict(
                     kind="entity",
@@ -972,6 +1016,27 @@ def run_intake(
         pause_reasons.append(f"纪要解析失败（{minutes.note}）")
         questions.append("纪要未给出可解析的周期（如 2026-10-26 至 2026-11-01），请补充明确的统计周期。")
 
+    # 人工豁免：读 waiver.json，把已确认接受的冲突摘出来；不是删除，是留痕
+    waived: list[Waiver] = []
+    waiver_path = (run_dir / "waiver.json") if run_dir is not None else None
+    if waiver_path is not None and waiver_path.exists():
+        try:
+            waiver_data = json.loads(waiver_path.read_text(encoding="utf-8"))
+            keys = [str(x) for x in (waiver_data.get("items") or []) if str(x).strip()]
+            if keys:
+                for conflict in list(consistency.conflicts):
+                    if any(key in conflict.detail for key in keys):
+                        consistency.conflicts.remove(conflict)
+                        waived.append(Waiver(
+                            at=str(waiver_data.get("at") or ""),
+                            by=str(waiver_data.get("by") or ""),
+                            items=[conflict.detail],
+                            reason=str(waiver_data.get("reason") or ""),
+                        ))
+                log.append(f"人工豁免：" + str(len(waived)) + " 项冲突已确认接受")
+        except Exception as exc:  # noqa: BLE001
+            log.append("waiver.json 读取失败：" + str(exc))
+
     core_missing = [r for r in requirements if r.kind == "核心" and r.status == "missing"]
     blocked_items: list[str] = []
     if core_missing:
@@ -1014,9 +1079,10 @@ def run_intake(
 
     if state == "准入通过":
         extra = f"；含 {len(degrade)} 项降级口径" if degrade else ""
+        waive_note = f"；{len(waived)} 项冲突经人工确认豁免" if waived else ""
         message = (
             f"材料齐备：{counts.data} 个数据文件 + 1 份纪要，周期 {minutes.week}"
-            f"（{minutes.period_start} 至 {minutes.period_end}）{extra}，可进入 S2。"
+            f"（{minutes.period_start} 至 {minutes.period_end}）{extra}{waive_note}，可进入 S2。"
         )
         next_action = "continue"
     elif state == "待补充":
@@ -1041,6 +1107,7 @@ def run_intake(
         missing=missing,
         degrade=degrade,
         questions=questions,
+        waived=waived,
         message=message,
         next_action=next_action,
     )
@@ -1063,6 +1130,8 @@ def run_intake(
         )
         try:
             _write_json(run_dir / "intake.json", result.model_dump())
+            # 原文留一份，重跑（例如人工豁免后）不用再问用户要提示词
+            (run_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
             log.append(f"已落盘 {run.dir}/intake.json")
             _write_json(status_file, status.model_dump())
             log.append(f"已落盘 {run.dir}/status.json")
