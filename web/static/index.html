@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>经营周报 · 第一步 准入检查</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --line: #dfe4ea;
+    --text: #1f2933;
+    --muted: #66727f;
+    --ok: #12864a;
+    --ok-bg: #e6f6ec;
+    --warn: #a15c00;
+    --warn-bg: #fdf3d8;
+    --stop: #b3261e;
+    --stop-bg: #fdeceb;
+    --accent: #17549c;
+    --accent-dark: #103f77;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  header.topbar {
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+    padding: 16px 24px 14px;
+  }
+  header.topbar h1 { margin: 0; font-size: 19px; letter-spacing: .5px; }
+  header.topbar p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main.layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px;
+    align-items: start;
+  }
+  @media (max-width: 920px) {
+    main.layout { grid-template-columns: minmax(0, 1fr); }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .panel > h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 700;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel > h2 .hint { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 6px; }
+
+  /* 输入区 */
+  #drop {
+    border: 2px dashed #c3ccd6;
+    border-radius: 8px;
+    padding: 18px 12px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: .15s;
+    background: #fafbfc;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); color: var(--accent); background: #f1f6fd; }
+  #drop strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 2px; }
+  #drop span { font-size: 12px; }
+  ul.filelist { list-style: none; margin: 10px 0 0; padding: 0; }
+  ul.filelist li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    background: #fbfcfd;
+  }
+  ul.filelist .fname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  ul.filelist .fsize { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  ul.filelist button {
+    border: 0; background: transparent; color: var(--stop);
+    cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px;
+  }
+  .empty-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  label.field { display: block; margin: 16px 0 6px; font-size: 13px; font-weight: 600; }
+  label.field .hint { font-weight: 400; color: var(--muted); }
+  textarea#prompt {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+    border: 1px solid #c3ccd6;
+    border-radius: 8px;
+    background: #fff;
+  }
+  textarea#prompt:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23,84,156,.12); }
+  .actions { display: flex; gap: 10px; margin-top: 14px; }
+  button.primary, button.ghost {
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 8px;
+    padding: 9px 18px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  button.primary { background: var(--accent); color: #fff; flex: 1; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+  button.primary:disabled { background: #9fb0c4; cursor: not-allowed; }
+  button.ghost { background: #fff; color: var(--text); border-color: #c3ccd6; }
+  button.ghost:hover { background: #f2f4f6; }
+  #progress { margin-top: 10px; font-size: 12px; color: var(--accent); min-height: 18px; }
+  #progress.busy::before {
+    content: "";
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-right: 6px;
+    border: 2px solid rgba(23,84,156,.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    vertical-align: -1px;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 错误条 */
+  #errorBar {
+    display: none;
+    border: 1px solid #f0b4b0;
+    background: var(--stop-bg);
+    color: var(--stop);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  #errorBar.show { display: block; }
+  #errorBar .etitle { font-weight: 700; }
+  #errorBar .edetail {
+    margin-top: 6px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 160px;
+    overflow: auto;
+    color: #7c1a15;
+  }
+
+  /* 判定条 */
+  .statebar {
+    border-radius: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .statebar .badge {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 3px 12px;
+    border-radius: 999px;
+    background: #eef1f4;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .statebar .msg { flex: 1; min-width: 200px; font-size: 13px; color: var(--text); }
+  .statebar.ok { background: var(--ok-bg); border-color: #b6e3c8; }
+  .statebar.ok .badge { background: var(--ok); color: #fff; }
+  .statebar.warn { background: var(--warn-bg); border-color: #f0dca4; }
+  .statebar.warn .badge { background: #c98a09; color: #fff; }
+  .statebar.stop { background: var(--stop-bg); border-color: #f0b4b0; }
+  .statebar.stop .badge { background: var(--stop); color: #fff; }
+  .statebar .meta { width: 100%; font-size: 12px; color: var(--muted); }
+
+  /* 统计卡 */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0 4px;
+  }
+  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: #fbfcfd;
+  }
+  .card .label { font-size: 12px; color: var(--muted); }
+  .card .value { font-size: 24px; font-weight: 700; line-height: 1.25; }
+
+  /* 分区 */
+  section.block { margin-top: 18px; }
+  section.block > h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 700;
+    padding-left: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  thead th {
+    background: #f2f4f7;
+    text-align: left;
+    font-weight: 600;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: #fafbfc; }
+  td.mono, .mono { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+  td.nowrap { white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 11.5px; display: block; margin-top: 2px; }
+  .tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    line-height: 18px;
+    white-space: nowrap;
+    background: #eef1f4;
+    color: #3d4854;
+  }
+  .tag.have { background: var(--ok-bg); color: var(--ok); border: 1px solid #b6e3c8; }
+  .tag.degrade { background: var(--warn-bg); color: var(--warn); border: 1px solid #f0dca4; }
+  .tag.missing { background: var(--stop-bg); color: var(--stop); border: 1px solid #f0b4b0; }
+  .tag.core { background: #e8f0fb; color: var(--accent); border: 1px solid #c3d8f2; }
+  .tag.extra { background: #f0f0f4; color: #555f6b; border: 1px solid #dcdfe5; }
+
+  .gapgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .gapbox { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #fbfcfd; }
+  .gapbox h4 { margin: 0 0 6px; font-size: 13px; font-weight: 700; }
+  .gapbox h4 .count { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .gapbox ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  .gapbox li { margin: 3px 0; }
+  .gapbox .none { color: var(--muted); font-size: 12.5px; margin: 0; }
+  .gapbox .li-sub { color: var(--muted); font-size: 12px; display: block; }
+
+  details.raw { margin-top: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd; }
+  details.raw summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  details.raw summary::-webkit-details-marker { display: none; }
+  details.raw summary::before { content: "▸"; margin-right: 6px; color: var(--muted); }
+  details.raw[open] summary::before { content: "▾"; }
+  details.raw summary .summary-label { flex: 1; }
+  details.raw pre {
+    margin: 0;
+    padding: 12px;
+    border-top: 1px solid var(--line);
+    background: #1f2933;
+    color: #e8eef5;
+    font-size: 12px;
+    line-height: 1.55;
+    overflow: auto;
+    max-height: 420px;
+    border-radius: 0 0 8px 8px;
+  }
+  button.mini {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #c3ccd6;
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button.mini:hover { background: #eef1f4; }
+
+  /* 历史 */
+  #historyList { display: grid; gap: 8px; }
+  .runitem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: #fbfcfd;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    width: 100%;
+  }
+  .runitem:hover { border-color: var(--accent); background: #f1f6fd; }
+  .runitem .run-tag { font-weight: 700; min-width: 52px; }
+  .runitem .run-state { flex: 1; }
+  .runitem .run-at { color: var(--muted); font-size: 12px; }
+  .placeholder {
+    border: 1px dashed #c3ccd6;
+    border-radius: 10px;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .hidden { display: none !important; }
+
+.llm-card{margin-top:14px;padding:10px 12px;border:1px solid #e2e6ee;border-radius:10px;background:#fafbfd}
+.llm-head{display:flex;align-items:center;gap:8px;font-size:13px}
+.llm-head .dot{width:8px;height:8px;border-radius:50%;background:#c3c9d4;flex:0 0 auto}
+.dot.ok{background:#2e9e5b}.dot.bad{background:#d64545}.dot.idle{background:#d9a520}
+.llm-head .ghost.small{margin-left:auto;padding:4px 10px;font-size:12px}
+.llm-card .empty-note{margin:6px 0 0;font-size:12px;color:#6b7280}
+.chat-link{display:inline-block;margin-top:10px;padding:7px 14px;border-radius:8px;background:#1f5fbf;color:#fff;text-decoration:none;font-size:13px}
+.chat-link:hover{background:#1a52a6}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>经营周报 · 第一步 准入检查</h1>
+  <p>上传数据文件与会议纪要，填写提示词，先判断本周能否进入写作环节。</p>
+  <a class="chat-link" href="/chat.html">和助手对话 →</a>
+</header>
+
+<main class="layout">
+  <section class="panel">
+    <h2>输入<span class="hint">数据文件 1 个以上，纪要恰好 1 份</span></h2>
+
+    <div id="drop" role="button" tabindex="0">
+      <strong>拖拽文件到这里，或点击选择</strong>
+      <span>支持 csv / xlsx / md / txt / docx，可多选</span>
+    </div>
+    <input id="fileInput" type="file" multiple class="hidden">
+
+    <ul id="fileList" class="filelist"></ul>
+    <p id="fileEmpty" class="empty-note">尚未选择文件。</p>
+
+    <label class="field" for="prompt">提示词<span class="hint">（恰好 1 条）</span></label>
+    <textarea id="prompt" spellcheck="false"></textarea>
+
+    <div class="actions">
+      <button id="runBtn" class="primary" type="button">开始检查</button>
+      <button id="clearBtn" class="ghost" type="button">清空</button>
+    </div>
+    <div id="progress"></div>
+    <div class="llm-card">
+      <div class="llm-head">
+        <span class="dot idle" id="llmDot"></span>
+        <span>模型 <b id="llmModel">glm-5.3-flash</b></span>
+        <button id="llmBtn" class="ghost small" type="button">测试连接</button>
+      </div>
+      <p class="empty-note" id="llmMsg">使用项目根目录 .env 里的 GLM_API_KEY</p>
+    </div>
+
+  </section>
+
+  <section class="panel">
+    <h2>结果</h2>
+
+    <div id="errorBar">
+      <div class="etitle" id="errorTitle"></div>
+      <div class="edetail hidden" id="errorDetail"></div>
+    </div>
+
+    <div id="placeholder" class="placeholder">左侧上传文件并填写提示词，点击「开始检查」后在这里查看判定结果。</div>
+    <div id="resultBody" class="hidden"></div>
+
+    <section class="block" id="historyBlock">
+      <h3>历史运行</h3>
+      <div id="historyList"></div>
+      <p id="historyEmpty" class="empty-note">暂无历史运行记录。</p>
+    </section>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var DEFAULT_PROMPT = "请按 2026 年第 44 周（10 月 26 日至 11 月 1 日）出经营周报，覆盖全公司及四个区域。";
+
+  var picked = [];          // {file: File, name: string, size: number}
+  var busy = false;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) { node.className = className; }
+    if (text !== undefined && text !== null) { node.textContent = String(text); }
+    return node;
+  }
+
+  function fmtSize(bytes) {
+    var n = Number(bytes);
+    if (!isFinite(n) || n < 0) { return "—"; }
+    if (n < 1024) { return n + " B"; }
+    if (n < 1024 * 1024) { return (n / 1024).toFixed(1) + " KB"; }
+    return (n / 1024 / 1024).toFixed(2) + " MB";
+  }
+
+  function dash(value) {
+    if (value === null || value === undefined) { return "—"; }
+    var s = String(value).trim();
+    return s === "" ? "—" : s;
+  }
+
+  function arr(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function obj(value) {
+    return (value && typeof value === "object" && !Array.isArray(value)) ? value : {};
+  }
+
+  /* ---------------- 错误与进度 ---------------- */
+
+  function showError(title, detail) {
+    $("errorTitle").textContent = title || "请求失败";
+    var detailBox = $("errorDetail");
+    if (detail) {
+      detailBox.textContent = String(detail);
+      detailBox.classList.remove("hidden");
+    } else {
+      detailBox.textContent = "";
+      detailBox.classList.add("hidden");
+    }
+    $("errorBar").classList.add("show");
+  }
+
+  function clearError() {
+    $("errorBar").classList.remove("show");
+    $("errorTitle").textContent = "";
+    $("errorDetail").textContent = "";
+    $("errorDetail").classList.add("hidden");
+  }
+
+  function setProgress(text, isBusy) {
+    var box = $("progress");
+    box.textContent = text || "";
+    if (isBusy) { box.classList.add("busy"); } else { box.classList.remove("busy"); }
+  }
+
+  function setBusy(next) {
+    busy = next;
+    $("runBtn").disabled = next;
+    $("runBtn").textContent = next ? "检查中…" : "开始检查";
+    $("clearBtn").disabled = next;
+  }
+
+  /* ---------------- 文件选择 ---------------- */
+
+  function addFiles(list) {
+    var added = 0;
+    for (var i = 0; i < list.length; i++) {
+      var file = list[i];
+      var name = file.name || "未命名";
+      var exists = picked.some(function (item) {
+        return item.name === name && item.size === file.size && item.file === file;
+      });
+      if (exists) { continue; }
+      picked.push({ file: file, name: name, size: file.size || 0 });
+      added++;
+    }
+    if (added > 0) { clearError(); }
+    renderFileList();
+  }
+
+  function renderFileList() {
+    var list = $("fileList");
+    list.textContent = "";
+    picked.forEach(function (item, index) {
+      var li = el("li");
+      var name = el("span", "fname", item.name);
+      name.title = item.name;
+      var size = el("span", "fsize", fmtSize(item.size));
+      var remove = el("button", null, "×");
+      remove.type = "button";
+      remove.title = "移除该文件";
+      remove.setAttribute("aria-label", "移除 " + item.name);
+      remove.addEventListener("click", function () {
+        picked.splice(index, 1);
+        renderFileList();
+      });
+      li.appendChild(name);
+      li.appendChild(size);
+      li.appendChild(remove);
+      list.appendChild(li);
+    });
+    if (picked.length === 0) {
+      $("fileEmpty").classList.remove("hidden");
+    } else {
+      $("fileEmpty").classList.add("hidden");
+    }
+  }
+
+  function readAsBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onerror = function () { reject(new Error("读取文件失败：" + (file.name || ""))); };
+      reader.onload = function () {
+        var bytes = new Uint8Array(reader.result);
+        var chunk = 0x8000;
+        var parts = [];
+        for (var i = 0; i < bytes.length; i += chunk) {
+          parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)));
+        }
+        var binary = parts.join("");
+        resolve(binary ? btoa(binary) : "");
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  /* ---------------- 渲染结果 ---------------- */
+
+  function stateClass(state) {
+    if (state === "准入通过") { return "ok"; }
+    if (state === "待补充") { return "warn"; }
+    if (state === "暂停") { return "stop"; }
+    return "";
+  }
+
+  function renderStateBar(intake, status) {
+    var state = String(intake.state || "未知");
+    var bar = el("div", "statebar " + stateClass(state));
+    bar.appendChild(el("span", "badge", state));
+    bar.appendChild(el("span", "msg", dash(intake.message)));
+
+    var run = obj(intake.run);
+    var bits = [];
+    if (run.period_tag) { bits.push("周期 " + run.period_tag); }
+    if (run.dir) { bits.push("目录 " + run.dir); }
+    if (intake.next_action) { bits.push("下一步 " + intake.next_action); }
+    var at = String(obj(status).at || "");
+    if (at) { bits.push("更新 " + at); }
+    if (bits.length) { bar.appendChild(el("div", "meta", bits.join(" · "))); }
+    return bar;
+  }
+
+  function renderStats(intake) {
+    var counts = obj(intake.counts);
+    var reqs = arr(intake.requirements);
+    var wrap = el("div", "stats");
+    [
+      ["数据文件数", counts.data],
+      ["纪要数", counts.minutes],
+      ["提示词", counts.prompt],
+      ["需求条数", reqs.length]
+    ].forEach(function (pair) {
+      var card = el("div", "card");
+      card.appendChild(el("div", "label", pair[0]));
+      var value = (pair[1] === null || pair[1] === undefined) ? "—" : String(pair[1]);
+      card.appendChild(el("div", "value", value));
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  function makeTable(headers, rows) {
+    var wrap = el("div", "tablewrap");
+    var table = el("table");
+    var thead = el("thead");
+    var tr = el("tr");
+    headers.forEach(function (h) { tr.appendChild(el("th", null, h)); });
+    thead.appendChild(tr);
+    table.appendChild(thead);
+
+    var tbody = el("tbody");
+    if (rows.length === 0) {
+      var emptyRow = el("tr");
+      var cell = el("td", "sub", "无");
+      cell.colSpan = headers.length;
+      emptyRow.appendChild(cell);
+      tbody.appendChild(emptyRow);
+    } else {
+      rows.forEach(function (cells) {
+        var row = el("tr");
+        cells.forEach(function (cell) {
+          var td;
+          if (cell && typeof cell === "object" && cell.node && cell.node.nodeType === 1) {
+            td = el("td", cell.className || null);
+            td.appendChild(cell.node);
+          } else {
+            td = el("td", null, dash(cell));
+          }
+          row.appendChild(td);
+        });
+        tbody.appendChild(row);
+      });
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function cellNode(node, className) {
+    return { node: node, className: className || "" };
+  }
+
+  function renderFiles(intake) {
+    var files = arr(intake.files);
+    var rows = files.map(function (raw) {
+      var f = obj(raw);
+      var sha = String(f.sha256 || "");
+      var nameCell = el("span", null, dash(f.name));
+      if (f.duplicate_of) {
+        nameCell.appendChild(el("span", "sub", "重复于 " + f.duplicate_of));
+      }
+      if (f.error) {
+        nameCell.appendChild(el("span", "sub", "错误：" + f.error));
+      }
+      var shaCell = el("span", "mono", sha ? sha.slice(0, 12) : "—");
+      shaCell.title = sha ? sha : "未取证";
+      var readable = f.readable === false ? "不可读" : "可读";
+      var roleCell = el("span", null, dash(f.role));
+      roleCell.appendChild(el("span", "sub", readable));
+      return [
+        cellNode(nameCell),
+        cellNode(roleCell),
+        dash(f.format),
+        fmtSize(f.size),
+        (f.rows === null || f.rows === undefined) ? "—" : String(f.rows),
+        cellNode(shaCell),
+        dash(f.date_range)
+      ];
+    });
+    return makeTable(
+      ["文件名", "角色", "格式", "大小", "行数", "SHA-256 前 12 位", "日期范围"],
+      rows
+    );
+  }
+
+  function renderRequirements(intake) {
+    var reqs = arr(intake.requirements);
+    var rows = reqs.map(function (raw) {
+      var r = obj(raw);
+      var status = String(r.status || "missing");
+      var statusTag = el("span", "tag " + status, status);
+      var ev = el("span", null, dash(r.evidence));
+      if (r.impact) { ev.appendChild(el("span", "sub", "影响：" + r.impact)); }
+      if (r.note) { ev.appendChild(el("span", "sub", "说明：" + r.note)); }
+      if (arr(r.needs).length) {
+        ev.appendChild(el("span", "sub", "需要：" + arr(r.needs).join("、")));
+      }
+      var kind = String(r.kind || "");
+      var kindTag = el("span", "tag " + (kind === "核心" ? "core" : "extra"), dash(kind));
+      return [
+        cellNode(el("span", null, dash(r.item))),
+        cellNode(kindTag),
+        cellNode(statusTag),
+        cellNode(ev)
+      ];
+    });
+    return makeTable(["条目", "核心/补充", "状态", "证据"], rows);
+  }
+
+  function buildGapBox(title, entries) {
+    var box = el("div", "gapbox");
+    var head = el("h4", null, title);
+    head.appendChild(el("span", "count", "（" + entries.length + "）"));
+    box.appendChild(head);
+    if (entries.length === 0) {
+      box.appendChild(el("p", "none", "无"));
+      return box;
+    }
+    var ul = el("ul");
+    entries.forEach(function (entry) {
+      var li = el("li");
+      if (entry && entry.main !== undefined) {
+        li.appendChild(document.createTextNode(String(entry.main)));
+        arr(entry.subs).forEach(function (sub) {
+          if (sub) { li.appendChild(el("span", "li-sub", String(sub))); }
+        });
+      } else {
+        li.appendChild(document.createTextNode(String(entry)));
+      }
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    return box;
+  }
+
+  function renderGaps(intake) {
+    var consistency = obj(intake.consistency);
+
+    var conflicts = [];
+    arr(consistency.conflicts).forEach(function (raw) {
+      var c = obj(raw);
+      conflicts.push({ main: (c.kind ? "【" + c.kind + "】" : "") + dash(c.detail), subs: [] });
+    });
+    arr(consistency.column_mismatch).forEach(function (raw) {
+      var c = obj(raw);
+      var subtypes = [];
+      var types = obj(c.types);
+      Object.keys(types).forEach(function (k) { subtypes.push(k + "：" + types[k]); });
+      conflicts.push({
+        main: "列结构不一致：" + dash(c.column),
+        subs: [
+          arr(c.missing_in).length ? "缺少于 " + arr(c.missing_in).join("、") : "",
+          subtypes.join("；")
+        ]
+      });
+    });
+    arr(consistency.cross_file_duplicates).forEach(function (raw) {
+      var c = obj(raw);
+      conflicts.push({
+        main: (c.kind === "same_hash" ? "哈希相同：" : "疑似重复/版本冲突：") + arr(c.files).join("、"),
+        subs: [c.note ? String(c.note) : ""]
+      });
+    });
+
+    var overlaps = arr(consistency.date_overlap).map(function (raw) {
+      var d = obj(raw);
+      return {
+        main: dash(d.start) + " 至 " + dash(d.end),
+        subs: [arr(d.files).join("、")]
+      };
+    });
+
+    var missing = arr(intake.missing).map(function (raw) {
+      var m = obj(raw);
+      return { main: dash(m.what), subs: [m.impact ? "影响：" + m.impact : "", m.how ? "处理：" + m.how : ""] };
+    });
+
+    var degrade = arr(intake.degrade).map(function (raw) {
+      var d = obj(raw);
+      return { main: dash(d.item), subs: [d.impact ? "影响：" + d.impact : ""] };
+    });
+
+    var questions = arr(intake.questions).map(function (q) { return String(q); });
+
+    var grid = el("div", "gapgrid");
+    grid.appendChild(buildGapBox("冲突", conflicts));
+    grid.appendChild(buildGapBox("日期重叠", overlaps));
+    grid.appendChild(buildGapBox("缺失项", missing));
+    grid.appendChild(buildGapBox("降级项", degrade));
+    grid.appendChild(buildGapBox("待确认问题", questions));
+    return grid;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      try {
+        var ok = document.execCommand("copy");
+        document.body.removeChild(area);
+        if (ok) { resolve(); } else { reject(new Error("复制失败")); }
+      } catch (err) {
+        document.body.removeChild(area);
+        reject(err);
+      }
+    });
+  }
+
+  function renderRaw(intake, status) {
+    var details = el("details", "raw");
+    var summary = el("summary");
+    summary.appendChild(el("span", "summary-label", "原始 JSON"));
+    var copyBtn = el("button", "mini", "复制");
+    copyBtn.type = "button";
+    copyBtn.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      copyText(details.querySelector("pre").textContent).then(function () {
+        copyBtn.textContent = "已复制";
+        setTimeout(function () { copyBtn.textContent = "复制"; }, 1500);
+      }).catch(function () {
+        copyBtn.textContent = "复制失败";
+        setTimeout(function () { copyBtn.textContent = "复制"; }, 1500);
+      });
+    });
+    summary.appendChild(copyBtn);
+    details.appendChild(summary);
+
+    var payload = { intake: intake, status: status };
+    var pre = el("pre", null, JSON.stringify(payload, null, 2));
+    details.appendChild(pre);
+    return details;
+  }
+
+  function renderResult(intake, status) {
+    var body = $("resultBody");
+    body.textContent = "";
+
+    body.appendChild(renderStateBar(intake, status));
+    body.appendChild(renderStats(intake));
+
+    function section(title, node) {
+      var sec = el("section", "block");
+      sec.appendChild(el("h3", null, title));
+      sec.appendChild(node);
+      body.appendChild(sec);
+    }
+
+    section("文件清点", renderFiles(intake));
+    section("需求矩阵", renderRequirements(intake));
+    section("一致性与缺口", renderGaps(intake));
+    body.appendChild(renderRaw(intake, status));
+
+    body.classList.remove("hidden");
+    $("placeholder").classList.add("hidden");
+  }
+
+  /* ---------------- 历史运行 ---------------- */
+
+  function fmtAt(text) {
+    var s = String(text || "");
+    if (!s) { return ""; }
+    return s.replace("T", " ").slice(0, 19);
+  }
+
+  function renderHistory(runs) {
+    var list = $("historyList");
+    list.textContent = "";
+    if (!runs || runs.length === 0) {
+      $("historyEmpty").classList.remove("hidden");
+      return;
+    }
+    $("historyEmpty").classList.add("hidden");
+    runs.forEach(function (raw) {
+      var run = obj(raw);
+      var btn = el("button", "runitem");
+      btn.type = "button";
+      btn.appendChild(el("span", "run-tag", dash(run.period_tag)));
+      var state = String(run.state || "");
+      var stateTag = el("span", "tag " + stateClass(state), state ? state : "未知");
+      var stateWrap = el("span", "run-state");
+      stateWrap.appendChild(stateTag);
+      btn.appendChild(stateWrap);
+      btn.appendChild(el("span", "run-at", fmtAt(run.at)));
+      btn.title = String(run.dir || "");
+      btn.addEventListener("click", function () { loadRun(String(run.period_tag || ""), btn); });
+      list.appendChild(btn);
+    });
+  }
+
+  function loadRuns() {
+    return fetch("/api/runs", { headers: { "Accept": "application/json" } })
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) { renderHistory(arr(obj(data).runs)); })
+      .catch(function () { renderHistory([]); });
+  }
+
+  function loadRun(tag, btn) {
+    if (!tag || busy) { return; }
+    clearError();
+    var old = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "加载中…"; }
+    fetch("/api/runs/" + encodeURIComponent(tag), { headers: { "Accept": "application/json" } })
+      .then(function (resp) {
+        return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+      })
+      .then(function (res) {
+        if (!res.ok || res.data.ok === false) {
+          showError(res.data.error || ("加载 " + tag + " 失败"), res.data.detail || "");
+          return;
+        }
+        renderResult(obj(res.data.intake), obj(res.data.status));
+        setProgress("已加载历史运行 " + tag, false);
+      })
+      .catch(function (err) { showError("加载失败", String(err)); })
+      .then(function () {
+        if (btn) { btn.disabled = false; btn.textContent = old; }
+      });
+  }
+
+  /* ---------------- 提交 ---------------- */
+
+  function submit() {
+    if (busy) { return; }
+    clearError();
+
+    if (picked.length === 0) {
+      showError("还没有选择文件", "请至少上传 1 个数据文件，并上传 1 份会议纪要。");
+      return;
+    }
+
+    setBusy(true);
+    setProgress("正在读取文件（" + picked.length + " 个）…", true);
+
+    var jobs = picked.map(function (item) {
+      return readAsBase64(item.file).then(function (data) {
+        return { name: item.name, data: data };
+      });
+    });
+
+    Promise.all(jobs)
+      .then(function (files) {
+        setProgress("正在上传并执行准入检查，请稍候…", true);
+        return fetch("/api/intake", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: $("prompt").value, files: files })
+        });
+      })
+      .then(function (resp) {
+        return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+      })
+      .then(function (res) {
+        var data = obj(res.data);
+        if (!res.ok || data.ok !== true) {
+          showError(data.error || "准入检查失败", data.detail || "");
+          setProgress("检查未完成", false);
+          return;
+        }
+        renderResult(obj(data.intake), obj(data.status));
+        var state = String(obj(data.intake).state || "");
+        setProgress("检查完成：" + (state || "已返回结果"), false);
+        loadRuns();
+      })
+      .catch(function (err) {
+        showError("请求失败", String(err && err.message ? err.message : err));
+        setProgress("请求失败", false);
+      })
+      .then(function () { setBusy(false); });
+  }
+
+  function clearAll() {
+    picked = [];
+    renderFileList();
+    $("prompt").value = DEFAULT_PROMPT;
+    clearError();
+    setProgress("", false);
+    $("resultBody").textContent = "";
+    $("resultBody").classList.add("hidden");
+    $("placeholder").classList.remove("hidden");
+  }
+
+  /* ---------------- 绑定 ---------------- */
+
+  function init() {
+    $("prompt").value = DEFAULT_PROMPT;
+    renderFileList();
+
+    var drop = $("drop");
+    var input = $("fileInput");
+
+    drop.addEventListener("click", function () { input.click(); });
+    drop.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        input.click();
+      }
+    });
+    input.addEventListener("change", function () {
+      addFiles(input.files || []);
+      input.value = "";
+    });
+
+    ["dragenter", "dragover"].forEach(function (name) {
+      drop.addEventListener(name, function (event) {
+        event.preventDefault();
+        drop.classList.add("over");
+      });
+    });
+    ["dragleave", "dragend"].forEach(function (name) {
+      drop.addEventListener(name, function () { drop.classList.remove("over"); });
+    });
+    drop.addEventListener("drop", function (event) {
+      event.preventDefault();
+      drop.classList.remove("over");
+      var files = event.dataTransfer ? event.dataTransfer.files : null;
+      if (files && files.length) { addFiles(files); }
+    });
+    window.addEventListener("dragover", function (event) { event.preventDefault(); });
+    window.addEventListener("drop", function (event) {
+      if (!drop.contains(event.target)) { event.preventDefault(); }
+    });
+
+    $("runBtn").addEventListener("click", submit);
+    $("clearBtn").addEventListener("click", clearAll);
+
+    loadRuns();
+    loadLlm();
+  }
+
+  // ---- GLM 连接 ----
+  const llmDot = document.getElementById("llmDot");
+  const llmModel = document.getElementById("llmModel");
+  const llmMsg = document.getElementById("llmMsg");
+  const llmBtn = document.getElementById("llmBtn");
+
+  function setLlm(state, text) {
+    if (llmDot) llmDot.className = "dot " + state;
+    if (llmMsg) llmMsg.textContent = text;
+  }
+
+  async function loadLlm() {
+    try {
+      const resp = await fetch("/api/llm");
+      const data = await resp.json();
+      if (llmModel) llmModel.textContent = data.model || "未配置";
+      if (!data.configured) { setLlm("bad", data.error || "未找到 GLM_API_KEY，请检查 .env"); return; }
+      setLlm("idle", "密钥已加载，点右侧测试连接");
+    } catch (err) {
+      setLlm("bad", "读取模型配置失败：" + err.message);
+    }
+  }
+
+  async function testLlm() {
+    if (!llmBtn) return;
+    llmBtn.disabled = true;
+    setLlm("idle", "正在连接…");
+    try {
+      const resp = await fetch("/api/llm/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await resp.json();
+      if (data.ok) {
+        setLlm("ok", "连接正常，回复「" + (data.reply || "") + "」，" + data.elapsed_ms + " ms");
+      } else {
+        setLlm("bad", data.error || "连接失败");
+      }
+    } catch (err) {
+      setLlm("bad", "连接失败：" + err.message);
+    } finally {
+      llmBtn.disabled = false;
+    }
+  }
+
+  if (llmBtn) llmBtn.addEventListener("click", testLlm);
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

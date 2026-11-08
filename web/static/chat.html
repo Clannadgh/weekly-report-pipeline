@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>经营周报助手</title>
+<style>
+:root{--blue:#1f5fbf;--ink:#1f2937;--muted:#6b7280;--line:#e3e8f0;--bg:#f4f6fb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.65 "Microsoft YaHei","PingFang SC",system-ui,sans-serif}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;background:#fff;border-bottom:1px solid var(--line)}
+.brand{font-weight:700;font-size:16px}
+.topbar nav a{margin-left:16px;color:var(--muted);text-decoration:none;font-size:13px}
+.topbar nav a:hover{color:var(--blue)}
+.chat-wrap{max-width:900px;margin:0 auto;padding:18px 16px 0;display:flex;flex-direction:column;height:calc(100vh - 58px)}
+.uploader{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.up-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.up-head span{color:var(--muted);font-size:12px}
+.up-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.hidden{display:none}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#fff;padding:7px 14px}
+button:disabled{opacity:.55;cursor:not-allowed}
+button.ghost:hover{border-color:#b9c6dc}
+button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+button.primary:hover{background:#1a52a6}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:#eef3fb;border:1px solid #d6e2f5;border-radius:999px;padding:4px 10px;font-size:12px;display:flex;gap:6px;align-items:center}
+.chip button{border:0;background:transparent;padding:0;color:#8a94a6;font-size:14px;line-height:1}
+.bound{margin:8px 0 0;color:var(--muted);font-size:12px}
+.progress{min-width:280px}
+.trace-head{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;padding:0;cursor:pointer;font:inherit;color:#374151;text-align:left}
+.trace-title{font-weight:700;font-size:13px}
+.trace-meta{margin-left:auto;color:#6b7280;font-size:12px}
+.chev{color:#6b7280;font-size:14px;transform:rotate(90deg);transition:transform .15s}
+.progress.collapsed .chev{transform:rotate(0)}
+.progress.collapsed .steps,.progress.collapsed .p-detail{display:none}
+.steps{list-style:none;margin:0;padding:0}
+.step{display:flex;align-items:center;gap:8px;padding:3px 0;color:#9aa3b2;font-size:12.5px}
+.step .dot{width:16px;height:16px;border-radius:50%;border:2px solid #d7dde8;display:inline-flex;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#fff;flex:0 0 auto}
+.step.done{color:#1f2937}
+.step.done .dot{background:#2e9e5b;border-color:#2e9e5b}
+.step.active{color:#1f5fbf;font-weight:600}
+.step.active .dot{
+  border:0;
+  background:conic-gradient(from 0deg,#1f5fbf 0deg 100deg,#e3e8f0 100deg 360deg);
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.5px),#000 calc(100% - 2.4px));
+  mask:radial-gradient(farthest-side,transparent calc(100% - 2.5px),#000 calc(100% - 2.4px));
+  animation:spin .9s linear infinite;
+}
+.step.thought{color:#8a93a3;font-size:12px;align-items:flex-start}
+.step.thought .dot{border-color:#e2e7f0;background:transparent;margin-top:2px}
+.step.thought .name{white-space:pre-wrap;word-break:break-word}
+.step.thought.open .name{color:#4b5563}
+.p-detail{color:#6b7280;font-size:12px;margin-top:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.messages{flex:1;overflow-y:auto;padding:4px 2px 16px}
+.welcome{color:var(--muted);background:#fff;border:1px dashed var(--line);border-radius:12px;padding:18px;text-align:center;font-size:13px}
+.msg{display:flex;margin:12px 0}
+.msg.user{justify-content:flex-end}
+.bubble{max-width:78%;padding:10px 14px;border-radius:12px;white-space:pre-wrap;word-break:break-word}
+.msg.assistant .bubble{background:#fff;border:1px solid var(--line);border-top-left-radius:4px}
+.msg.user .bubble{background:var(--blue);color:#fff;border-top-right-radius:4px}
+.msg.error .bubble{background:#fdecec;border:1px solid #f5c2c2;color:#a33232}
+.bubble ul{margin:6px 0;padding-left:20px}
+.bubble p{margin:4px 0}
+.events{margin:2px 0 0 2px;color:var(--muted);font-size:12px}
+.events span{display:inline-block;background:#eef3fb;border:1px solid #d6e2f5;border-radius:999px;padding:1px 8px;margin-right:6px}
+.composer{display:flex;gap:10px;align-items:flex-end;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:16px}
+.composer textarea{flex:1;border:0;outline:0;resize:none;min-height:44px;max-height:140px;font:inherit;padding:6px 4px}
+.tip{color:var(--muted);font-size:12px;margin:0 0 10px 4px}
+@media(max-width:640px){.bubble{max-width:90%}.chat-wrap{padding:12px 10px 0}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">经营周报助手</div>
+  <nav><a href="/">准入检查页</a><a href="/api/runs" target="_blank">运行记录</a></nav>
+</header>
+<main class="chat-wrap">
+  <section class="uploader">
+    <div class="up-head">
+      <strong>本次会话的材料</strong>
+      <span>数据文件 + 纪要，可多选；上传一次，后续追问不用重复传</span>
+    </div>
+    <div class="up-row">
+      <button class="ghost" id="pickBtn" type="button">选择文件</button>
+      <input type="file" id="fileInput" multiple class="hidden">
+      <div id="chips" class="chips"></div>
+    </div>
+    <p class="bound" id="bound">尚未建立会话；选择文件并发送后绑定。</p>
+  </section>
+
+  <section class="messages" id="messages">
+    <div class="welcome" id="welcome">
+      先把销售数据和会议纪要放进来，然后直接说要什么。<br>
+      例如：请按 2026 年第 44 周出经营周报，覆盖全公司及四个区域。
+    </div>
+  </section>
+
+  <p class="tip">Enter 发送，Shift + Enter 换行。数字与结论都来自 S1 工具，助手只负责转述。</p>
+  <section class="composer">
+    <textarea id="input" rows="1" placeholder="说说你想做什么，或问 S1 返回了什么…"></textarea>
+    <button class="primary" id="sendBtn" type="button">发送</button>
+  </section>
+</main>
+<script>
+(function () {
+  "use strict";
+  var sessionId = null;
+  var picked = [];
+  var boundNames = [];
+
+  var fileInput = document.getElementById("fileInput");
+  var pickBtn = document.getElementById("pickBtn");
+  var chips = document.getElementById("chips");
+  var bound = document.getElementById("bound");
+  var messages = document.getElementById("messages");
+  var welcome = document.getElementById("welcome");
+  var input = document.getElementById("input");
+  var sendBtn = document.getElementById("sendBtn");
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function renderChips() {
+    chips.textContent = "";
+    picked.forEach(function (item, index) {
+      var chip = el("span", "chip", item.name);
+      var remove = el("button", "", "×");
+      remove.type = "button";
+      remove.addEventListener("click", function () {
+        var removed = picked[index];
+        picked.splice(index, 1);
+        if (sessionId && boundNames.indexOf(removed.name) >= 0) {
+          sessionId = null;
+          boundNames = [];
+          if (bound) bound.textContent = "已移除会话中的文件，下次发送会新建会话";
+        } else if (bound) {
+          bound.textContent = "文件列表已更新";
+        }
+        renderChips();
+      });
+      chip.appendChild(remove);
+      chips.appendChild(chip);
+    });
+  }
+
+  pickBtn.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () {
+    Array.prototype.forEach.call(fileInput.files, function (file) {
+      picked.push({ name: file.name, file: file });
+    });
+    fileInput.value = "";
+    if (sessionId && bound) {
+      bound.textContent = sendBtn.disabled
+        ? "已加入列表，等这一轮结束、下次发送时并入会话"
+        : "有新增文件，下次发送时加入本次会话";
+    }
+    renderChips();
+  });
+
+  function readBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var text = String(reader.result || "");
+        var comma = text.indexOf(",");
+        resolve(comma >= 0 ? text.slice(comma + 1) : text);
+      };
+      reader.onerror = function () { reject(new Error("读取失败：" + file.name)); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function ensureSession() {
+    if (sessionId) return;
+    if (!picked.length) throw new Error("请先选择数据文件和纪要。");
+    var payload = [];
+    for (var i = 0; i < picked.length; i++) {
+      payload.push({ name: picked[i].name, data: await readBase64(picked[i].file) });
+    }
+    var resp = await fetch("/api/chat/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files: payload })
+    });
+    var data = await resp.json();
+    if (!data.ok) throw new Error(data.error || "创建会话失败");
+    sessionId = data.session_id;
+    boundNames = data.files || [];
+    if (bound) bound.textContent = "本次会话已绑定：" + boundNames.join("、");
+  }
+
+  async function syncFiles() {
+    if (!sessionId) return;
+    var extra = picked.filter(function (item) { return boundNames.indexOf(item.name) < 0; });
+    if (!extra.length) return;
+    var payload = [];
+    for (var i = 0; i < extra.length; i++) {
+      payload.push({ name: extra[i].name, data: await readBase64(extra[i].file) });
+    }
+    var resp = await fetch("/api/chat/files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, files: payload })
+    });
+    var data = await resp.json();
+    if (!data.ok) throw new Error(data.error || "追加文件失败");
+    boundNames = data.files || boundNames;
+    if (bound) bound.textContent = "本次会话已绑定：" + boundNames.join("、");
+  }
+
+  function appendMessage(role, text) {
+    if (welcome) { welcome.remove(); welcome = null; }
+    var wrap = el("div", "msg " + role);
+    var bubble = el("div", "bubble");
+    var normalized = String(text || "")
+      .replace(/([。！？；])\s*-\s+/g, "$1\n- ")
+      .replace(/\u0060/g, "");
+    var lines = normalized.split(/\n/);
+    var list = null;
+    lines.forEach(function (line) {
+      var trimmed = line.trim();
+      if (trimmed.indexOf("- ") === 0 || trimmed.indexOf("• ") === 0) {
+        if (!list) { list = el("ul"); bubble.appendChild(list); }
+        var item = el("li", "", trimmed.slice(2).replace(/\*\*/g, ""));
+        list.appendChild(item);
+      } else {
+        list = null;
+        if (trimmed) bubble.appendChild(el("p", "", trimmed.replace(/\*\*/g, "")));
+      }
+    });
+    if (!bubble.childNodes.length) bubble.textContent = String(text || "");
+    wrap.appendChild(bubble);
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    return wrap;
+  }
+
+  function appendEvents(events, parent) {
+    if (!events || !events.length) return;
+    var bar = el("div", "events");
+    events.forEach(function (ev) {
+      var label = ev.tool + (ev.run_id ? " · " + ev.run_id : "") + (ev.state ? " · " + ev.state : "");
+      bar.appendChild(el("span", "", label));
+    });
+    parent.appendChild(bar);
+  }
+
+  function appendProgress() {
+    if (welcome) { welcome.remove(); welcome = null; }
+    var wrap = el("div", "msg assistant");
+    var bubble = el("div", "bubble progress");
+    var head = el("button", "trace-head");
+    head.type = "button";
+    var chev = el("span", "chev", "›");
+    var title = el("span", "trace-title", "执行过程");
+    var meta = el("span", "trace-meta", "准备中…");
+    head.appendChild(chev);
+    head.appendChild(title);
+    head.appendChild(meta);
+    var list = el("ol", "steps");
+    var detail = el("div", "p-detail", "正在思考…");
+    bubble.appendChild(head);
+    bubble.appendChild(list);
+    bubble.appendChild(detail);
+    head.addEventListener("click", function () { bubble.classList.toggle("collapsed"); });
+    wrap.appendChild(bubble);
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    return { wrap: wrap, bubble: bubble, meta: meta, list: list, detail: detail, finished: false };
+  }
+
+  function preview(text) {
+    var one = String(text || "").replace(/\s+/g, " ").trim();
+    return one.length > 100 ? one.slice(0, 100) + "…" : one;
+  }
+
+  function renderProgress(target, data) {
+    var states = data.states || [];
+    var thoughts = data.thoughts || [];
+    target.list.textContent = "";
+    (data.steps || []).forEach(function (name, index) {
+      var state = states[index] || "pending";
+      if (state === "pending") return;  // 还没到的步骤不显示
+      var item = el("li", "step " + state);
+      item.appendChild(el("span", "dot", state === "done" ? "✓" : ""));
+      item.appendChild(el("span", "name", name));
+      target.list.appendChild(item);
+    });
+    thoughts.forEach(function (text) {
+      var item = el("li", "step thought");
+      item.appendChild(el("span", "dot"));
+      var name = el("span", "name", "已思考 · " + preview(text));
+      item.appendChild(name);
+      item.addEventListener("click", function () {
+        var open = item.classList.toggle("open");
+        name.textContent = open ? text : ("已思考 · " + preview(text));
+      });
+      target.list.appendChild(item);
+    });
+    if (data.finished) {
+      target.meta.textContent = "已完成";
+    } else if (data.started) {
+      target.meta.textContent = "进行中 · " + ((data.current || 0) + 1) + "/8";
+    } else if (thoughts.length) {
+      target.meta.textContent = "思考中";
+    } else {
+      target.meta.textContent = "准备中…";
+    }
+    if (data.started) {
+      target.detail.style.display = "";
+      target.detail.textContent = data.finished ? "已完成" : (data.detail || "进行中…");
+    } else {
+      target.detail.style.display = "none";
+    }
+    if (data.finished && !target.finished) {
+      target.finished = true;
+      target.bubble.classList.add("collapsed");  // 跑完自动折叠
+    }
+  }
+
+  function pollProgress(target) {
+    if (!sessionId) return Promise.resolve();
+    return fetch("/api/chat/progress?session_id=" + encodeURIComponent(sessionId))
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data.ok) return;
+        if (!data.started && !(data.thoughts || []).length) return;
+        target.last = data;
+        renderProgress(target, data);
+      })
+      .catch(function () {});
+  }
+
+  function setBusy(busy) {
+    // 只锁发送，避免重复提交；上传和删除任何时候都能点
+    sendBtn.disabled = busy;
+    sendBtn.textContent = busy ? "思考中…" : "发送";
+  }
+
+  async function send() {
+    var text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    input.style.height = "auto";
+    appendMessage("user", text);
+    setBusy(true);
+    var pending = appendProgress();
+    var timer = null;
+    try {
+      await ensureSession();
+      await syncFiles();
+      timer = setInterval(function () { pollProgress(pending); }, 350);
+      var resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, message: text })
+      });
+      var data = await resp.json();
+      if (timer) clearInterval(timer);
+      var usedS1 = (data.events || []).some(function (e) { return e.tool === "run_s1"; });
+      var hasThoughts = (data.thoughts || []).length > 0;
+      if (!data.ok || (!usedS1 && !hasThoughts)) {
+        pending.wrap.remove();
+      } else {
+        await pollProgress(pending);  // 最后一次刷新，让 8 步都变绿并折叠
+        if (pending.last && data.thoughts) {
+          pending.last.thoughts = data.thoughts;  // 用完整思考覆盖轮询时的截断版
+          renderProgress(pending, pending.last);
+        }
+      }
+      if (!data.ok) throw new Error(data.error || "助手调用失败");
+      var bubble = appendMessage("assistant", data.reply || "（没有返回内容）");
+      appendEvents(data.events, bubble.parentNode);
+    } catch (err) {
+      if (timer) clearInterval(timer);
+      pending.wrap.remove();
+      appendMessage("error", err.message || String(err));
+    } finally {
+      setBusy(false);
+      input.focus();
+    }
+  }
+
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      send();
+    }
+  });
+  input.addEventListener("input", function () {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 140) + "px";
+  });
+})();
+</script>
+</body>
+</html>

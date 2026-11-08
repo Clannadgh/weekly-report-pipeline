@@ -1,0 +1,156 @@
+"""S1 准入检查的数据契约。
+
+所有落盘文件（intake.json / status.json）与 Web API 的响应都按这里的模型序列化，
+下游步骤只认这些字段，不读对话。
+"""
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+Role = Literal["数据", "纪要", "规范"]
+ReqKind = Literal["核心", "补充"]
+ReqStatus = Literal["have", "degrade", "missing"]
+IntakeState = Literal["准入通过", "暂停", "待补充"]
+NextAction = Literal["continue", "wait"]
+
+
+class FileInfo(BaseModel):
+    """一个输入文件的清点结果。哈希、行数、表名、日期范围一律现取。"""
+
+    name: str                      # 原始文件名（不含路径）
+    path: str = ""                 # 相对运行目录的路径，如 inputs/sales.csv
+    format: str = ""               # csv / xlsx / md / txt / docx ...
+    size: int = 0                  # 字节
+    sha256: str = ""
+    role: Role = "数据"
+    readable: bool = True
+    sheets: list[str] = Field(default_factory=list)
+    tables: list[str] = Field(default_factory=list)
+    columns: list[str] = Field(default_factory=list)
+    date_range: str = ""           # 2026-10-26 至 2026-11-01；取不到留空
+    rows: int = 0
+    duplicate_of: str | None = None
+    error: str = ""                # 不可读时的原因
+
+
+class Counts(BaseModel):
+    data: int = 0
+    minutes: int = 0
+    prompt: int = 0
+
+
+class PromptInfo(BaseModel):
+    present: bool = False
+    goal: str = ""
+    scope: str = ""
+    extras: list[str] = Field(default_factory=list)
+
+
+class MinutesInfo(BaseModel):
+    week: str = ""                 # 2026-W44
+    period_start: str = ""         # 2026-10-26
+    period_end: str = ""           # 2026-11-01
+    compare_start: str = ""        # 2026-10-19
+    compare_end: str = ""          # 2026-10-25
+    entities: list[str] = Field(default_factory=list)
+    metrics: list[str] = Field(default_factory=list)
+    actions: int = 0
+    parse_ok: bool = True
+    note: str = ""
+
+
+class Requirement(BaseModel):
+    item: str
+    kind: ReqKind = "核心"
+    needs: list[str] = Field(default_factory=list)
+    status: ReqStatus = "missing"
+    evidence: str = ""             # 实际表名/列名/日期范围
+    impact: str = ""
+    note: str = ""
+
+
+class ColumnMismatch(BaseModel):
+    column: str
+    missing_in: list[str] = Field(default_factory=list)
+    types: dict[str, str] = Field(default_factory=dict)
+
+
+class DateOverlap(BaseModel):
+    start: str
+    end: str
+    files: list[str] = Field(default_factory=list)
+
+
+class DuplicateFile(BaseModel):
+    files: list[str] = Field(default_factory=list)
+    kind: Literal["same_hash", "overlap_content"] = "same_hash"
+    note: str = ""
+
+
+class Conflict(BaseModel):
+    kind: str                      # period / entity / caliber
+    detail: str
+
+
+class Consistency(BaseModel):
+    column_mismatch: list[ColumnMismatch] = Field(default_factory=list)
+    date_overlap: list[DateOverlap] = Field(default_factory=list)
+    cross_file_duplicates: list[DuplicateFile] = Field(default_factory=list)
+    conflicts: list[Conflict] = Field(default_factory=list)
+
+
+class Coverage(BaseModel):
+    merged_start: str = ""
+    merged_end: str = ""
+    covers_prompt_scope: bool = True
+
+
+class MissingItem(BaseModel):
+    what: str
+    impact: str = ""
+    how: str = ""
+
+
+class DegradeItem(BaseModel):
+    item: str
+    impact: str = ""
+
+
+class RunInfo(BaseModel):
+    period_tag: str = ""           # w44
+    dir: str = ""                  # runs/w44（相对项目根）
+
+
+class IntakeResult(BaseModel):
+    state: IntakeState
+    run: RunInfo = Field(default_factory=RunInfo)
+    files: list[FileInfo] = Field(default_factory=list)
+    counts: Counts = Field(default_factory=Counts)
+    prompt: PromptInfo = Field(default_factory=PromptInfo)
+    minutes: MinutesInfo = Field(default_factory=MinutesInfo)
+    requirements: list[Requirement] = Field(default_factory=list)
+    consistency: Consistency = Field(default_factory=Consistency)
+    coverage: Coverage = Field(default_factory=Coverage)
+    missing: list[MissingItem] = Field(default_factory=list)
+    degrade: list[DegradeItem] = Field(default_factory=list)
+    questions: list[str] = Field(default_factory=list)
+    message: str = ""
+    next_action: NextAction = "wait"
+
+
+class StatusHistory(BaseModel):
+    at: str
+    state: str
+    updated_by: str
+    note: str = ""
+
+
+class Status(BaseModel):
+    stage: str = "intake"
+    state: str = ""
+    updated_by: str = "S1"
+    at: str = ""
+    note: str = ""
+    history: list[StatusHistory] = Field(default_factory=list)
