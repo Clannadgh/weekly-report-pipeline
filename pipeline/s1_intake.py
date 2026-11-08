@@ -16,6 +16,7 @@ from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 
+from .approvals import clear as clear_approvals
 from .models import (
     Waiver,
     ColumnMismatch,
@@ -954,6 +955,7 @@ def run_intake(
         log.append(f"周期标识 {tag}，运行目录 {run.dir}")
 
     if run_dir is not None:
+        clear_approvals(run_dir, ("s1", "s2", "s3"))
         _archive_attempt(run_dir, log)
         mapping = _copy_inputs(paths, run_dir, log)
         for path, info in records:

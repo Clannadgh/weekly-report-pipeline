@@ -12,6 +12,7 @@ import re
 import sys
 from pathlib import Path
 
+from .approvals import clear as clear_approvals
 from .llm import LLMError, chat, get_config
 from .models import (
     Card, CardAction, CardEntry, CardFuture, CardsResult, CardStats,
@@ -264,6 +265,7 @@ def run_s2(run_dir: str | Path, run_root: str | Path | None = None,
     if not run_dir.is_dir() and run_root:
         run_dir = Path(run_root) / run_dir
     log: list[str] = []
+    clear_approvals(run_dir, ("s2", "s3"))
 
     intake = _load_intake(run_dir)
     result = CardsResult()

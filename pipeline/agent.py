@@ -10,6 +10,7 @@ import json
 import uuid
 from pathlib import Path
 
+from .approvals import load as load_approvals
 from .llm import chat, chat_stream
 from .s1_intake import STEPS, run_intake
 
@@ -60,10 +61,12 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
     （对象、纪要怎么说、数据是多少、建议怎么改）。有阻断时明确说「必须先处理才能往下」，
     不要用「基本一致」「大致吻合」这类话把 mismatch 说轻。
 21. S3 的数字只能照抄工具返回的 display / raw，不要自己再算一遍或换算单位。
-22. S3 出结果后，进入下一步前必须调用 check_approval：
-    approved=false 时，提示用户点 S3 弹窗里的「批准」按钮，不要继续，也不要重复跑 S3；
-    用户说「继续」但还没批准时，同样先提示。
-    只有 approved=true 才能往下走。
+22. 每个阶段都要用户批准：
+    - 调 run_s2 前，先 check_approval(stage="s1")；未批准就提示用户点左侧 S1 节点旁的「批准」按钮，
+      或点「全部批准」，不要继续。
+    - 调 run_s3 前，先 check_approval(stage="s2")；未批准同样提示。
+    - S3 出结果后，进入下一步前 check_approval(stage="s3")；未批准同样提示。
+    approved=false 时不要重复跑同一阶段，等用户批准后再继续。
 23. 用户对某张卡片的取数口径提出调整（例如「本周不算周六周日」「剔除停业那几天」）时，
     调 recalc_card：card_id 传卡片编号，hint 把用户的口径要求写成一句能被代码执行的说明
     （例如「只统计销售日期为周一至周五的记录，排除周六和周日」）。
@@ -179,6 +182,8 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "run_id": {"type": "string", "description": "可选，默认最近一次运行"},
+                    "stage": {"type": "string", "enum": ["s1", "s2", "s3"],
+                              "description": "要查的阶段，默认 s3"},
                 },
             },
         },
@@ -454,17 +459,25 @@ class Session:
         if not folder.is_dir():
             return {"ok": False, "approved": False,
                     "error": "找不到运行目录：" + run_id}
-        data = _read_json(folder / "approval.json")
-        approved = bool(data.get("approved"))
+        stage = str(args.get("stage") or "s3").strip().lower()
+        if stage not in ("s1", "s2", "s3"):
+            return {"ok": False, "approved": False,
+                    "error": "stage 只能是 s1/s2/s3"}
+        approvals = load_approvals(folder)
+        entry = approvals.get(stage) or {}
+        approved = bool(entry.get("approved"))
+        label = stage.upper()
         return {
             "ok": True,
             "run_id": run_id,
+            "stage": stage,
             "approved": approved,
-            "stage": data.get("stage") or "",
-            "at": data.get("at") or "",
-            "by": data.get("by") or "",
+            "at": entry.get("at") or "",
+            "by": entry.get("by") or "",
+            "approvals": approvals,
             "note": ("" if approved else
-                     "用户还没有批准 S3，请先点 S3 弹窗里的「批准」按钮，再继续。"),
+                     "用户还没有批准 " + label + "，请先点左侧 " + label +
+                     " 节点旁的「批准」按钮，或点「全部批准」，再继续。"),
         }
 
     def _list_runs(self) -> dict:
@@ -516,6 +529,9 @@ class Session:
         folder = self.run_root / run_id
         if not folder.is_dir():
             return {"ok": False, "error": "找不到运行目录：" + run_id}
+        if not load_approvals(folder).get("s1", {}).get("approved"):
+            return {"ok": False, "approval_required": "s1",
+                    "error": "S1 还没有批准，请先点左侧 S1 节点旁的「批准」按钮，或点「全部批准」。"}
         try:
             from .s2_cards import run_s2
 
@@ -536,6 +552,9 @@ class Session:
         folder = self.run_root / run_id
         if not folder.is_dir():
             return {"ok": False, "error": "找不到运行目录：" + run_id}
+        if not load_approvals(folder).get("s2", {}).get("approved"):
+            return {"ok": False, "approval_required": "s2",
+                    "error": "S2 还没有批准，请先点左侧 S2 节点旁的「批准」按钮，或点「全部批准」。"}
         try:
             from .s3_reconcile import run_s3
 
@@ -545,10 +564,10 @@ class Session:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": "S3 执行失败：" + str(exc)}
         payload = _summarize_issues(result)
-        approval = _read_json(folder / "approval.json")
-        payload["approved"] = bool(approval.get("approved"))
-        payload["approval_note"] = ("" if payload["approved"] else
-                                    "需要用户点 S3 弹窗里的「批准」按钮后才能进入下一步。")
+        approved = bool(load_approvals(folder).get("s3", {}).get("approved"))
+        payload["approved"] = approved
+        payload["approval_note"] = ("" if approved else
+                                    "需要用户点左侧 S3 节点旁的「批准」按钮后才能进入下一步。")
         payload["log"] = logs[-6:]
         return payload
 

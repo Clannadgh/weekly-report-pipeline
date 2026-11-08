@@ -51,7 +51,20 @@
 
 /* ---------- 左侧流水线 ---------- */
 .pipeline-side{padding:26px 0 0;min-width:0;align-self:start}
-.pipeline-head{margin:0 0 14px 2px;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.pipeline-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px 2px;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.pipeline-approve-all{
+  margin:0;padding:2px 8px;border:1px solid #c3d8f2;border-radius:999px;
+  background:#eef3fb;color:var(--accent);font:inherit;font-size:10.5px;
+  letter-spacing:0;cursor:pointer;
+}
+.pipeline-approve-all:hover{background:#e3ecfa;border-color:var(--accent)}
+.pipeline-approve{
+  margin-top:5px;padding:2px 8px;border:1px solid #c3d8f2;border-radius:999px;
+  background:#eef3fb;color:var(--accent);font:inherit;font-size:11px;cursor:pointer;
+}
+.pipeline-approve:hover{background:#e3ecfa;border-color:var(--accent)}
+.pipeline-approve:disabled{opacity:.55;cursor:not-allowed}
+.pipeline-approved{display:inline-block;margin-top:5px;font-size:11px;font-weight:600;color:var(--ok)}
 .pipeline-list{list-style:none;margin:0;padding:0;position:relative}
 .pipeline-list::before{content:"";position:absolute;left:8px;top:8px;bottom:8px;width:1px;background:var(--line)}
 .pipeline-node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:0 0 22px}
@@ -445,6 +458,8 @@ body.drawer-open{overflow:hidden}
   .pipeline-name{font-size:11.5px}
   .pipeline-meta{display:none}
   .pipeline-override{margin:0 0 0 2px;padding:1px 6px;font-size:10.5px}
+  .pipeline-approve{margin:0 0 0 2px;padding:1px 6px;font-size:10.5px}
+  .pipeline-approved{margin:0 0 0 2px;font-size:10.5px}
   .chat-main{flex:1;min-height:0}
 }
 
@@ -513,7 +528,10 @@ body.drawer-open{overflow:hidden}
 
 <main class="app">
   <aside class="pipeline-side" aria-label="流水线进度">
-    <div class="pipeline-head">流水线</div>
+    <div class="pipeline-head">
+      <span>流水线</span>
+      <button class="pipeline-approve-all" id="approveAllBtn" type="button" hidden>全部批准</button>
+    </div>
     <ol class="pipeline-list" id="pipelineList"></ol>
   </aside>
 
@@ -652,6 +670,7 @@ body.drawer-open{overflow:hidden}
   var bound = document.getElementById("bound");
   var messages = document.getElementById("messages");
   var pipelineList = document.getElementById("pipelineList");
+  var approveAllBtn = document.getElementById("approveAllBtn");
   var welcomeTpl = document.getElementById("welcomeTpl");
   var welcome = null;
   var input = document.getElementById("input");
@@ -748,9 +767,17 @@ body.drawer-open{overflow:hidden}
     return state || "已运行";
   }
 
+  function stageCanApprove(key, data) {
+    if (!data || !data.run) return false;
+    if (key === "s3") return true;
+    return stateTone(data.state) === "ok";
+  }
+
   function renderPipeline() {
     if (!pipelineList) return;
     pipelineList.textContent = "";
+    var anyApprove = false;
+    var latestRun = "";
     PIPELINE_STAGES.forEach(function (stage) {
       var data = pipeline[stage.key];
       var tone = data ? stateTone(data.state) : "neutral";
@@ -765,10 +792,11 @@ body.drawer-open{overflow:hidden}
         li.setAttribute("role", "button");
         li.setAttribute("tabindex", "0");
         li.addEventListener("click", function (event) {
-          if (event.target.closest(".pipeline-override")) return;
+          if (event.target.closest(".pipeline-override,.pipeline-approve")) return;
           openRunDetail(data.run);
         });
         li.addEventListener("keydown", function (event) {
+          if (event.target.closest(".pipeline-override,.pipeline-approve")) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openRunDetail(data.run);
@@ -793,6 +821,7 @@ body.drawer-open{overflow:hidden}
         var openStage = function () { openS2Detail(data.run); };
         li.addEventListener("click", openStage);
         li.addEventListener("keydown", function (event) {
+          if (event.target.closest(".pipeline-approve")) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openStage();
@@ -807,15 +836,36 @@ body.drawer-open{overflow:hidden}
         var openS3 = function () { openS3Detail(data.run); };
         li.addEventListener("click", openS3);
         li.addEventListener("keydown", function (event) {
+          if (event.target.closest(".pipeline-approve")) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openS3();
           }
         });
       }
+      if (data && data.run) latestRun = data.run;
+      if (stageCanApprove(stage.key, data)) {
+        if (data.approved) {
+          text.appendChild(el("span", "pipeline-approved", "已批准"));
+        } else {
+          anyApprove = true;
+          var approveBtn = el("button", "pipeline-approve", "批准");
+          approveBtn.type = "button";
+          approveBtn.title = "批准 " + stage.label;
+          approveBtn.addEventListener("click", function (event) {
+            event.stopPropagation();
+            approveStage(data.run, stage.key, approveBtn);
+          });
+          text.appendChild(approveBtn);
+        }
+      }
       li.appendChild(text);
       pipelineList.appendChild(li);
     });
+    if (approveAllBtn) {
+      approveAllBtn.hidden = !anyApprove;
+      approveAllBtn.dataset.run = latestRun;
+    }
   }
 
   function setPipelineStage(key, data) {
@@ -827,15 +877,92 @@ body.drawer-open{overflow:hidden}
   function updatePipelineFromEvents(events) {
     if (!events || !events.length) return;
     var changed = false;
+    var latestRun = "";
     events.forEach(function (ev) {
       var key = ev.tool === "run_s1" ? "s1" : (ev.tool === "run_s2" ? "s2" : (ev.tool === "run_s3" ? "s3" : ""));
       if (!key) return;
-      pipeline[key] = { state: ev.state || "", run: ev.run_id || "", ok: !!ev.ok };
+      if (key === "s1") {
+        pipeline.s2 = null;
+        pipeline.s3 = null;
+      } else if (key === "s2") {
+        pipeline.s3 = null;
+      }
+      pipeline[key] = { state: ev.state || "", run: ev.run_id || "", ok: !!ev.ok, approved: false };
+      if (ev.run_id) latestRun = ev.run_id;
       changed = true;
     });
     if (changed) {
       savePipeline();
       renderPipeline();
+      if (latestRun) refreshApprovals(latestRun);
+    }
+  }
+
+  function applyApprovals(runId, approvals) {
+    if (!runId) return;
+    PIPELINE_STAGES.forEach(function (stage) {
+      var data = pipeline[stage.key];
+      if (data && data.run === runId) {
+        data.approved = !!(approvals && approvals[stage.key] && approvals[stage.key].approved);
+      }
+    });
+    savePipeline();
+    renderPipeline();
+  }
+
+  async function refreshApprovals(runId) {
+    if (!runId) return;
+    try {
+      var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approvals");
+      var data = await resp.json();
+      if (data.ok) applyApprovals(runId, data.approvals || {});
+    } catch (e) {}
+  }
+
+  async function approveStage(runId, stage, btn) {
+    if (!runId) return;
+    btn.disabled = true;
+    btn.textContent = "批准中…";
+    try {
+      var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: stage, session_id: sessionId || "" })
+      });
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.error || "批准失败");
+      applyApprovals(runId, data.approvals || {});
+      if (data.note) appendMessage("assistant", data.note);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "批准";
+      appendMessage("error", "批准失败：" + (err.message || err));
+    }
+  }
+
+  async function approveAllStages(runId, btn) {
+    if (!runId) return;
+    var stages = PIPELINE_STAGES.filter(function (stage) {
+      var data = pipeline[stage.key];
+      return data && data.run === runId && stageCanApprove(stage.key, data) && !data.approved;
+    }).map(function (stage) { return stage.key; });
+    if (!stages.length) return;
+    btn.disabled = true;
+    btn.textContent = "批准中…";
+    try {
+      var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stages: stages, session_id: sessionId || "" })
+      });
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.error || "批准失败");
+      applyApprovals(runId, data.approvals || {});
+      if (data.note) appendMessage("assistant", data.note);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "全部批准";
+      appendMessage("error", "批准失败：" + (err.message || err));
     }
   }
 
@@ -1526,6 +1653,7 @@ body.drawer-open{overflow:hidden}
       });
       var data = await resp.json();
       if (!data.ok) throw new Error(data.error || "批准失败");
+      applyApprovals(runId, data.approvals || { s3: data.approval || { approved: true } });
       renderS3Approval(data.approval || { approved: true }, runId);
       if (data.note) appendMessage("assistant", data.note);
     } catch (err) {
@@ -1549,6 +1677,7 @@ body.drawer-open{overflow:hidden}
       if (!data.ok || !data.issues || !Object.keys(data.issues).length) {
         throw new Error(data.error || "没有这次对账结果");
       }
+      applyApprovals(runId, data.approvals || { s3: data.approval || {} });
       renderS3Detail(data.issues, data.ledger || {}, data.approval || {}, runId);
     } catch (err) {
       s3DetailBody.textContent = "读取失败：" + (err.message || err);
@@ -1779,6 +1908,11 @@ body.drawer-open{overflow:hidden}
     sessionId = data.session_id;
     loadPipeline();
     renderPipeline();
+    var latestRun = (pipeline.s3 && pipeline.s3.run)
+      || (pipeline.s2 && pipeline.s2.run)
+      || (pipeline.s1 && pipeline.s1.run)
+      || "";
+    if (latestRun) refreshApprovals(latestRun);
     boundNames = data.files || [];
     setBound(boundNames.length
       ? "本次会话已绑定：" + boundNames.join("、")
@@ -1923,6 +2057,9 @@ body.drawer-open{overflow:hidden}
   }
 
   if (newChatBtn) newChatBtn.addEventListener("click", startNewChat);
+  if (approveAllBtn) approveAllBtn.addEventListener("click", function () {
+    approveAllStages(approveAllBtn.dataset.run, approveAllBtn);
+  });
   historyBtn.addEventListener("click", openHistory);
   drawerClose.addEventListener("click", closeHistory);
   historyDialog.addEventListener("click", function (event) {

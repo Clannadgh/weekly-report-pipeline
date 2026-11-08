@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .approvals import clear as clear_approvals
 from .models import IssueItem, IssuesResult, Ledger, LedgerEntry, ReconcileStats, ResultItem
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -237,12 +238,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
     if not intake_path.is_file():
         raise FileNotFoundError("找不到 intake.json，先跑 S1：" + str(intake_path))
 
-    approval_path = run_dir / "approval.json"
-    if approval_path.exists():
-        try:
-            approval_path.unlink()
-        except OSError:
-            pass
+    clear_approvals(run_dir, ("s3",))
 
     cards_data = json.loads(cards_path.read_text(encoding="utf-8"))
     intake = json.loads(intake_path.read_text(encoding="utf-8"))

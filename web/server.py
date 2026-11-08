@@ -543,6 +543,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.handle_chat_progress(urlparse(self.path).query)
             elif path == "/api/runs":
                 self.send_json({"runs": list_runs()})
+            elif path.startswith("/api/runs/") and path.endswith("/approvals"):
+                self.handle_approvals(path[len("/api/runs/"):-len("/approvals")])
             elif path.startswith("/api/runs/"):
                 self.serve_run(path[len("/api/runs/"):])
             elif path == "/favicon.ico":
@@ -682,7 +684,7 @@ class Handler(BaseHTTPRequestHandler):
                         "waiver": waiver, "note": note, "log": logs})
 
     def handle_approve(self, tag: str) -> None:
-        """记录用户对 S3 结果的批准；批准后才允许进入下一步。"""
+        """记录用户对 S1/S2/S3 结果的批准；批准后才允许进入下一步。"""
         payload = self.read_json_body()
         if payload is None:
             return
@@ -690,42 +692,72 @@ class Handler(BaseHTTPRequestHandler):
         if folder is None:
             self.send_error_json(404, "找不到运行目录：" + tag)
             return
-        stage = str(payload.get("stage") or "s3").strip()
-        if stage != "s3":
-            self.send_error_json(400, "目前只支持批准 S3 结果", "")
-            return
-        if not os.path.isfile(os.path.join(folder, "issues.json")):
-            self.send_error_json(400, "还没有 S3 结果，先跑 S3", "")
-            return
-        approval = {
-            "stage": "s3",
-            "approved": True,
-            "at": dt.datetime.now().isoformat(timespec="seconds"),
-            "by": "用户",
-            "note": str(payload.get("note") or "用户在界面点击批准"),
-        }
+        available = []
+        for key, name in (("s1", "intake.json"), ("s2", "cards.json"), ("s3", "issues.json")):
+            if os.path.isfile(os.path.join(folder, name)):
+                available.append(key)
+
+        raw_stages = payload.get("stages")
+        if isinstance(raw_stages, list) and raw_stages:
+            requested = [str(item).strip().lower() for item in raw_stages]
+            if any(item not in ("s1", "s2", "s3") for item in requested):
+                self.send_error_json(400, "stages 只能是 s1/s2/s3", "")
+                return
+            targets = [item for item in requested if item in available]
+            if not targets:
+                self.send_error_json(400, "没有可批准的结果", "")
+                return
+        else:
+            stage = str(payload.get("stage") or "all").strip().lower()
+            if stage not in ("s1", "s2", "s3", "all"):
+                self.send_error_json(400, "stage 只能是 s1/s2/s3/all", "")
+                return
+            if stage == "all":
+                targets = available
+            else:
+                if stage not in available:
+                    self.send_error_json(400, "还没有 " + stage.upper() + " 结果，先跑这一步", "")
+                    return
+                targets = [stage]
+            if not targets:
+                self.send_error_json(400, "还没有任何可批准的结果", "")
+                return
+
+        from pipeline.approvals import approve as approve_stages
+
+        note = str(payload.get("note") or "用户在界面点击批准")
         try:
-            with open(os.path.join(folder, "approval.json"), "w", encoding="utf-8") as fh:
-                json.dump(approval, fh, ensure_ascii=False, indent=2)
+            approvals = approve_stages(folder, targets, note=note)
         except OSError as exc:
             self.send_error_json(500, "写 approval.json 失败", str(exc))
             return
 
-        note = ""
+        labels = "、".join(item.upper() for item in targets)
+        session_note = "已批准 " + labels + "（" + tag + "）。"
         session_id = str(payload.get("session_id") or "").strip()
         if session_id:
             with _SESSION_LOCK:
                 session = _SESSIONS.get(session_id)
             if session is not None:
-                note = "已批准 S3 对账（" + tag + "）。可以进入下一步。"
                 try:
-                    session.messages.append({"role": "assistant", "content": note})
+                    session.messages.append({"role": "assistant", "content": session_note})
                     session.last_run = tag or session.last_run
                     session.save()
                 except Exception as exc:  # noqa: BLE001
                     log("写入批准提示失败：" + repr(exc))
-        log("S3 已批准：" + tag)
-        self.send_json({"ok": True, "approval": approval, "note": note})
+        log("已批准 " + labels + "：" + tag)
+        self.send_json({"ok": True, "approvals": approvals,
+                        "approval": approvals.get("s3", {}),
+                        "note": session_note})
+
+    def handle_approvals(self, tag: str) -> None:
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        from pipeline.approvals import load as load_approvals
+
+        self.send_json({"ok": True, "run_id": tag, "approvals": load_approvals(folder)})
 
     def serve_s3_result(self, run_id: str) -> None:
         """读已落盘的 issues.json / ledger.json，不现场重算。"""
@@ -739,10 +771,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "run_id": tag, "issues": {}, "ledger": {},
                             "error": "这次运行还没对过账"})
             return
+        from pipeline.approvals import load as load_approvals
+
+        approvals = load_approvals(folder)
         self.send_json({"ok": True,
                         "issues": try_read_json(path),
                         "ledger": try_read_json(os.path.join(folder, "ledger.json")),
-                        "approval": try_read_json(os.path.join(folder, "approval.json"))})
+                        "approval": approvals.get("s3", {}),
+                        "approvals": approvals})
 
     def handle_s3(self) -> None:
         payload = self.read_json_body()
