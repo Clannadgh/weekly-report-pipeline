@@ -637,11 +637,18 @@ class Handler(BaseHTTPRequestHandler):
         if folder is None:
             self.send_error_json(404, "找不到运行目录：" + run_id)
             return
+        only = [str(item) for item in (payload.get("only") or []) if str(item)]
+        hint = str(payload.get("hint") or "").strip()
         try:
-            from pipeline.s3_reconcile import run_s3
+            from pipeline.s3_reconcile import _save_override, run_s3
 
-            log("S3 开始：" + folder)
-            result, logs = run_s3(folder, engine=str(payload.get("engine") or "pandasai"))
+            if only and hint:
+                _save_override(Path(folder), only, hint)
+                log("口径建议：" + "、".join(only) + " -> " + hint)
+            log("S3 开始：" + folder + ("（只重算 " + "、".join(only) + "）" if only else ""))
+            result, logs = run_s3(folder,
+                                  engine=str(payload.get("engine") or "pandasai"),
+                                  only=only or None)
         except FileNotFoundError as exc:
             self.send_error_json(404, "前置文件缺失", str(exc))
             return

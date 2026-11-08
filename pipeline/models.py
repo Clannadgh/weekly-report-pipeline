@@ -287,6 +287,7 @@ class IssuesResult(BaseModel):
 
 class LedgerEntry(BaseModel):
     key: str = ""
+    card: str = ""
     value: float = 0.0
     unit: str = "元"
     display: str = ""
@@ -301,3 +302,12 @@ class LedgerEntry(BaseModel):
 
 class Ledger(BaseModel):
     entries: list[LedgerEntry] = Field(default_factory=list)
+
+
+class CaliberNote(BaseModel):
+    """人对某张卡片给的口径建议。写进 overrides.json，不覆盖工具判定。"""
+    card: str = ""
+    note: str = ""
+    hint: str = ""
+    by: str = ""
+    at: str = ""

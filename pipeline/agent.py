@@ -58,6 +58,12 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
     （对象、纪要怎么说、数据是多少、建议怎么改）。有阻断时明确说「必须先处理才能往下」，
     不要用「基本一致」「大致吻合」这类话把 mismatch 说轻。
 21. S3 的数字只能照抄工具返回的 display / raw，不要自己再算一遍或换算单位。
+22. 用户对某张卡片的取数口径提出调整（例如「本周不算周六周日」「剔除停业那几天」）时，
+    调 recalc_card：card_id 传卡片编号，hint 把用户的口径要求写成一句能被代码执行的说明
+    （例如「只统计销售日期为周一至周五的记录，排除周六和周日」）。
+    只重算这一张，其他卡片结果保留。不要自己重算数字，也不要改 ledger.json。
+23. 口径说明必须具体到能落成条件（字段 + 判断），不要写「合理一点」「按惯例」这类空话；
+    写不出来就问用户要明确的判断条件。
 """
 
 TOOLS = [
@@ -115,6 +121,24 @@ TOOLS = [
                     "force": {"type": "boolean",
                               "description": "已经拆过卡时是否强制重拆，默认 false 表示复用"},
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recalc_card",
+            "description": ("给一张卡片附加口径说明并只重算这一张，其他卡片结果保留。"
+                            "用于用户明确提出取数口径调整，例如「不算周末」「剔除停业期」。"
+                            "返回重算后的问题清单与统计。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "card_id": {"type": "string", "description": "卡片编号，如 M09"},
+                    "hint": {"type": "string",
+                             "description": "写成可执行条件的口径说明，如「只统计销售日期为周一至周五的记录」"},
+                },
+                "required": ["card_id", "hint"],
             },
         },
     },
@@ -467,6 +491,31 @@ class Session:
         payload["log"] = logs[-6:]
         return payload
 
+    def _recalc_card(self, args: dict) -> dict:
+        """只重算指定卡片，口径说明写进 overrides.json。"""
+        card_id = str(args.get("card_id") or "").strip()
+        hint = str(args.get("hint") or "").strip()
+        if not card_id or not hint:
+            return {"ok": False, "error": "card_id 和 hint 都必须给"}
+        run_id = str(self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S1/S2/S3"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s3_reconcile import _save_override, run_s3
+
+            _save_override(folder, [card_id], hint)
+            result, logs = run_s3(folder, only=[card_id])
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": "重算失败：" + str(exc)}
+        payload = _summarize_issues(result)
+        payload["recalculated"] = card_id
+        payload["caliber_hint"] = hint
+        payload["log"] = logs[-6:]
+        return payload
+
     def _waive_conflicts(self, args: dict) -> dict:
         """登记人工豁免，然后重跑 S1。豁免只对本次运行生效，写进 waiver.json 留痕。"""
         run_id = str(args.get("run_id") or self.last_run or "").strip()
@@ -499,6 +548,8 @@ class Session:
             return self._run_s2(args)
         if name == "run_s3":
             return self._run_s3(args)
+        if name == "recalc_card":
+            return self._recalc_card(args)
         if name == "waive_conflicts":
             return self._waive_conflicts(args)
         if name == "get_run":

@@ -432,7 +432,7 @@
         <h3>卡片核对 <span class="hint" style="font-weight:400;font-size:12px;color:var(--muted)">每张「能对数据」的卡片各是什么结论</span></h3>
         <div class="tablewrap">
           <table>
-            <thead><tr><th>卡片</th><th>对象</th><th>结论</th><th>数据</th><th>说明</th></tr></thead>
+            <thead><tr><th>卡片</th><th>对象</th><th>结论</th><th>数据</th><th>说明</th><th>操作</th></tr></thead>
             <tbody id="cardRows"></tbody>
           </table>
         </div>
@@ -678,6 +678,14 @@
       var note = String(item.note || "");
       if (note.length > 90) note = note.slice(0, 90) + "…";
       tr.appendChild(el("td", "sub", note));
+      var opCell = el("td", "nowrap");
+      if (item.level !== "无法判定" || true) {
+        var btn = el("button", "mini", "改口径");
+        btn.type = "button";
+        btn.addEventListener("click", function () { recalcCard(item.card, btn); });
+        opCell.appendChild(btn);
+      }
+      tr.appendChild(opCell);
       cardRows.appendChild(tr);
     });
 
@@ -747,6 +755,35 @@
 
     document.getElementById("rawJson").textContent =
       JSON.stringify({ issues: issues, ledger: ledger }, null, 2);
+  }
+
+  function recalcCard(cardId, btn) {
+    if (!current) return;
+    var hint = window.prompt(
+      "给 " + cardId + " 加一条口径说明，会拼进取数问句（例如：只统计周一至周五的记录）",
+      "只统计销售日期为周一至周五的记录，排除周六和周日"
+    );
+    if (hint === null) return;
+    hint = String(hint).trim();
+    if (!hint) return;
+    btn.disabled = true;
+    btn.textContent = "重算中…";
+    fetch("/api/s3", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: current.run_id, only: [cardId], hint: hint })
+    })
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data.ok) { showError(data.error || "重算失败", data.detail || ""); return; }
+        render(data.issues, {});
+        current.blocking = (data.issues.stats || {}).blocking || 0;
+        current.checked = (data.issues.stats || {}).checked || 0;
+        fillMeta(current);
+        renderHistory();
+      })
+      .catch(function (err) { showError("重算请求失败", err.message); })
+      .finally(function () { btn.disabled = false; btn.textContent = "改口径"; });
   }
 
   runBtn.addEventListener("click", function () {

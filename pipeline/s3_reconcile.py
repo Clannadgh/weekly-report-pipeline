@@ -248,9 +248,10 @@ def _slice(frame: pd.DataFrame, date_col: str, start: str, end: str) -> pd.DataF
 
 # ---------------------------------------------------------------- 判定
 
-def _ask_amount(qa, column: str, entity: str, metric: str, period: str) -> float | None:
+def _ask_amount(qa, column: str, entity: str, metric: str, period: str,
+                hint: str = "") -> float | None:
     """单独取本期金额，供台账建一条可被 S4 引用的金额键。"""
-    question = _build_question(column, entity, metric, period, "", False)
+    question = _build_question(column, entity, metric, period, "", False, hint)
     try:
         out = qa.ask(question, expect_shape="number", use_cache=False)
     except Exception:  # noqa: BLE001
@@ -294,7 +295,8 @@ def _judge(expect: str, current: float, base: float | None,
 # ---------------------------------------------------------------- 主流程
 
 def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
-           engine: str = "pandasai") -> tuple[IssuesResult, list[str]]:
+           engine: str = "pandasai", only: list[str] | None = None,
+           overrides: dict | None = None) -> tuple[IssuesResult, list[str]]:
     run_dir = Path(run_dir)
     if not run_dir.is_dir() and run_root:
         run_dir = Path(run_root) / run_dir
@@ -318,6 +320,15 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
     cards = [card for card in (cards_data.get("cards") or [])
              if card.get("checkable") == "能"]
     log.append("可对数据卡片 " + str(len(cards)) + " 张")
+
+    only_set = {str(item) for item in (only or []) if str(item)}
+    if overrides is None:
+        overrides = _load_overrides(run_dir)
+    if only_set:
+        cards_run = [card for card in cards if str(card.get("id")) in only_set]
+        log.append("只重算 " + "、".join(sorted(only_set)))
+    else:
+        cards_run = cards
 
     if not cards:
         result.state = "empty"
@@ -356,8 +367,10 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
     results: list[ResultItem] = []
     stats = ReconcileStats()
 
-    for card in cards:
+    for card in cards_run:
         card_id = str(card.get("id") or "")
+        caliber = overrides.get(card_id) or {}
+        caliber_hint = str(caliber.get("hint") or "")
         entity = str(card.get("entity") or "")
         entity_type = str(card.get("entity_type") or "")
         metric = str(card.get("metric") or "")
@@ -413,7 +426,8 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         elif qa is not None:
             qa_column = "_区域" if "推导" in column else column
             try:
-                out = _ask_card(qa, card, qa_column, entity, period, compare)
+                out = _ask_card(qa, card, qa_column, entity, period, compare,
+                                caliber_hint=caliber_hint)
             except Exception as exc:  # noqa: BLE001 - 单卡失败不影响其他卡
                 out = {"ok": False, "value": None, "verdict": "unsupported",
                        "flags": ["call_failed:" + str(exc)[:80]], "raw": "",
@@ -427,7 +441,8 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                 elif "tolerance_unparsed" in flags_now:
                     hint = "只输出一个数字，不要加单位和百分号。"
                 try:
-                    retry = _ask_card(qa, card, qa_column, entity, period, compare, hint)
+                    retry = _ask_card(qa, card, qa_column, entity, period, compare,
+                                      hint, caliber_hint)
                 except Exception:
                     retry = None
                 stats.calls += 1
@@ -447,7 +462,8 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                 ask_flags = ask_flags + ["重问后仍解析失败"]
             if (is_change_card and current is not None
                     and out.get("status") == "ok"):
-                amount_value = _ask_amount(qa, qa_column, entity, metric, period)
+                amount_value = _ask_amount(qa, qa_column, entity, metric,
+                                           period, caliber_hint)
             if out.get("fallback") or verdict == "none":
                 verdict = "unsupported"
             if any(flag.startswith("reference_unparsed") for flag in ask_flags):
@@ -513,7 +529,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
             qhash = _qhash(card_id, entity, metric, period, compare)
 
         ledger.entries.append(LedgerEntry(
-            key=key, value=float(current), unit=unit,
+            key=key, card=card_id, value=float(current), unit=unit,
             display=_display(current, unit),
             spec=("数据来自" + source + "；按记录ID保留第一条；"
                   "时间范围 " + period.replace(" 至 ", " 至 ") + "；"
@@ -528,7 +544,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                 _slug(entity), "amt", result.run_id or "w00",
             ])
             ledger.entries.append(LedgerEntry(
-                key=amount_key, value=float(amount_value), unit="元",
+                key=amount_key, card=card_id, value=float(amount_value), unit="元",
                 display=_display(amount_value, "元"),
                 spec=("数据来自" + source + "；按记录ID保留第一条；时间范围 "
                       + period + "；筛选 " + column + " 为 " + entity
@@ -541,13 +557,16 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
             left_name, right_name = ratio_card[0], ratio_card[1]
             explain = ("数据来自" + source + "；按记录ID保留第一条；时间范围 "
                        + period + "；筛选 门店名称 为「" + left_name + "」与「"
-                       + right_name + "」；口径为日均实收金额之比（合计 / 有销售记录天数）；结果 "
-                       + _display(current, "倍") + " 倍。")
+                       + right_name + "」；口径为日均实收金额之比（合计 / 有销售记录天数）"
+                       + ("；口径补充：" + caliber_hint if caliber_hint else "")
+                       + "；结果 " + _display(current, "倍") + " 倍。")
             raw_text = _display(current, "倍") + " 倍"
         else:
             explain = ("数据来自" + source + "；按记录ID保留第一条；时间范围 "
                        + period + "；筛选 " + column + " 为 " + entity
-                       + "；口径为" + metric + "求和；结果 " + _display(current, unit)
+                       + "；口径为" + metric + "求和"
+                       + ("；口径补充：" + caliber_hint if caliber_hint else "")
+                       + "；结果 " + _display(current, unit)
                        + ("" if unit == "%" else " " + unit) + "。")
             raw_text = (_display(change, "%") if change is not None
                         else _display(current, unit))
@@ -584,10 +603,38 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                          if note else "口径不足，正文不引用该结论")))
             stats.checked -= 1
 
+    if only_set:
+        keep_ids = {str(card.get("id")) for card in cards} - only_set
+        old_issues = _read_json(run_dir / "issues.json")
+        old_ledger = _read_json(run_dir / "ledger.json")
+        # 重算失败的卡片要沿用上一次的结果，不能因为这次没跑出来就丢掉
+        recomputed_ok = {item.card for item in results}
+        kept_cards = {str(item.get("card")) for item in old_issues.get("results", [])}
+        fallback_ids = {cid for cid in only_set
+                        if cid in kept_cards and cid not in recomputed_ok}
+
+        def keep(card_id: object) -> bool:
+            text_id = str(card_id)
+            return text_id in keep_ids or text_id in fallback_ids
+
+        issues = [IssueItem(**item) for item in old_issues.get("issues", [])
+                  if keep(item.get("card"))] + issues
+        results = [ResultItem(**item) for item in old_issues.get("results", [])
+                   if keep(item.get("card"))] + results
+        old_entries = old_ledger.get("entries", [])
+        missing_card = [entry for entry in old_entries if not entry.get("card")]
+        if missing_card:
+            log.append("旧台账有 " + str(len(missing_card))
+                       + " 条没有 card 字段，无法归属，已丢弃；建议先跑一次完整对账")
+        ledger.entries = [LedgerEntry(**entry) for entry in old_entries
+                          if keep(entry.get("card"))] + ledger.entries
+        if fallback_ids:
+            log.append("重算失败，沿用上次结果：" + "、".join(sorted(fallback_ids)))
+        log.append("保留未重算的 " + str(len(keep_ids)) + " 张卡片结果")
+
     result.coverage = _coverage(intake, ledger)
     uncovered = [c for c in result.coverage if c["status"] == "uncovered"]
     for item in uncovered:
-        stats.info += 1
         issues.append(IssueItem(
             id="Q" + str(len(issues) + 1).zfill(2), level="信息", type="missing",
             card="", subject=item["item"],
@@ -598,6 +645,17 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
                      else "正文写「无数据来源」：" + str(item.get("note") or "该指标没有被任何卡片覆盖"))
 
         ))
+
+    for index, item in enumerate(issues, 1):
+        item.id = "Q" + str(index).zfill(2)
+
+    stats = ReconcileStats(
+        blocking=sum(1 for item in issues if item.level == "阻断"),
+        warn=sum(1 for item in issues if item.level == "提示"),
+        info=sum(1 for item in issues if item.level == "信息"),
+        checked=len(results),
+        calls=stats.calls, ok=stats.ok, parse_failed=stats.parse_failed,
+    )
 
     result.issues = issues
     result.results = results
@@ -696,6 +754,22 @@ def _parse_ratio_quote(quote: str) -> tuple[str, str, float] | None:
     return stores[0], stores[1], ratio
 
 
+def _read_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _load_overrides(run_dir: Path) -> dict:
+    """<run>/overrides.json：人对某张卡片给的口径建议，形如
+    {"M09": {"note": "本周不含周末", "hint": "只统计周一至周五的记录", "by": "用户"}}"""
+    data = _read_json(run_dir / "overrides.json")
+    if not isinstance(data, dict):
+        return {}
+    return {str(key): value for key, value in data.items() if isinstance(value, dict)}
+
+
 def _metric_phrase(metric: str) -> str:
     if metric == "实收":
         return "实收金额合计"
@@ -709,7 +783,8 @@ def _metric_phrase(metric: str) -> str:
 
 
 def _build_question(column: str, entity: str, metric: str,
-                    period: str, compare: str, is_change: bool) -> str:
+                    period: str, compare: str, is_change: bool,
+                    hint: str = "") -> str:
     start_date, end_date = [part.strip() for part in period.split("至", 1)]
     base = _metric_phrase(metric)
     if not is_change:
@@ -717,6 +792,7 @@ def _build_question(column: str, entity: str, metric: str,
             "用 df，筛选 销售日期 在 " + start_date + " 至 " + end_date + "、"
             + column + " 为「" + entity + "」的记录，计算" + base + "。"
             "退货按负数直接计入；按记录ID去重保留第一条；结果保留两位小数。"
+            + (hint + "。" if hint else "") +
             "最后一行必须是 result = {'type': 'number', 'value': 数值}，"
             "value 里是纯数字，不要字符串、不要单位、不要千分位。"
         )
@@ -727,18 +803,21 @@ def _build_question(column: str, entity: str, metric: str,
         + column + " 为「" + entity + "」的" + base + "，"
         "再算 (本期 - 上期) / 上期。"
         "退货按负数直接计入；按记录ID去重保留第一条。"
+        + (hint + "。" if hint else "") +
         "最后一行必须是 result = {'type': 'number', 'value': round(变化率, 4)}，"
         "value 是小数（例如 -0.1271），不要百分号、不要字符串。"
     )
 
 
-def _build_ratio_question(a: str, b: str, metric: str, period: str) -> str:
+def _build_ratio_question(a: str, b: str, metric: str, period: str,
+                          hint: str = "") -> str:
     """「A 约为 B 的 N 成」：让 pandasai 算两个门店日均之比。"""
     start_date, end_date = [part.strip() for part in period.split("至", 1)]
     return (
         "用 df，筛选 销售日期 在 " + start_date + " 至 " + end_date + " 的记录。"
         "实收金额合计（门店名称 包含「" + a + "」）除以 7 得到 A；"
         "实收金额合计（门店名称 包含「" + b + "」）除以 7 得到 B；"
+        + (hint + "。" if hint else "") +
         "最后一行必须是 result = {'type': 'number', 'value': round(A / B, 4)}，"
         "value 里是纯数字，不要字符串、不要单位。"
     )
@@ -757,7 +836,8 @@ def _build_expected(expect: str, metric: str, unit: str,
 
 
 def _ask_card(qa, card: dict, column: str, entity: str,
-              period: str, compare: str, extra_hint: str = "") -> dict:
+              period: str, compare: str, extra_hint: str = "",
+              caliber_hint: str = "") -> dict:
     """调 pandasai 取一张卡片的数。返回工具的原始结果。"""
     metric = str(card.get("metric") or "")
     expect = str(card.get("expect") or "")
@@ -769,11 +849,12 @@ def _ask_card(qa, card: dict, column: str, entity: str,
              if expect in ("具体数值", "百分比") else None)
     if ratio is not None:
         left, right, value = ratio
-        question = _build_ratio_question(left, right, metric, period)
+        question = _build_ratio_question(left, right, metric, period, caliber_hint)
         expected = {"type": "ratio", "value": value, "tolerance": "ratio_pp:5"}
         reference = value
     else:
-        question = _build_question(column, entity, metric, period, compare, is_change)
+        question = _build_question(column, entity, metric, period, compare,
+                                   is_change, caliber_hint)
         expected = _build_expected(expect, metric, unit, target)
         reference = None
         if expect in ("具体数值", "百分比") and card.get("target_value"):
@@ -819,6 +900,26 @@ def _flag_text(flags: list[str]) -> str:
     return "；".join(parts)
 
 
+def _save_override(run_dir: Path, card_ids: list[str], hint: str, note: str = "",
+                   by: str = "用户") -> None:
+    """把口径建议写进 <run>/overrides.json，重算时读它拼进问句。"""
+    import datetime as dt
+
+    path = run_dir / "overrides.json"
+    data = _read_json(path)
+    if not isinstance(data, dict):
+        data = {}
+    for card_id in card_ids:
+        data[str(card_id)] = {
+            "card": str(card_id),
+            "note": note or hint,
+            "hint": hint,
+            "by": by,
+            "at": dt.datetime.now().isoformat(timespec="seconds"),
+        }
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _write(run_dir: Path, result: IssuesResult, ledger: Ledger) -> None:
     (run_dir / "issues.json").write_text(
         json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2),
@@ -835,10 +936,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--engine", choices=("pandasai", "builtin"), default="pandasai",
                         help="取数引擎：pandasai（默认）或内置规则")
+    parser.add_argument("--only", action="append", default=None,
+                        help="只重算指定卡片，可重复，如 --only M09")
+    parser.add_argument("--hint", default="",
+                        help="给 --only 的卡片加一条口径说明，如「只统计周一至周五的记录」")
     args = parser.parse_args(argv)
 
+    run_dir = Path(args.run)
+    if not run_dir.is_dir() and args.run_root:
+        run_dir = Path(args.run_root) / args.run
+    if args.only and args.hint:
+        _save_override(run_dir, args.only, args.hint, args.hint)
+
     try:
-        result, log = run_s3(args.run, args.run_root, engine=args.engine)
+        result, log = run_s3(args.run, args.run_root, engine=args.engine,
+                             only=args.only)
     except FileNotFoundError as exc:
         print(json.dumps({"state": "blocked", "message": str(exc)}, ensure_ascii=False))
         return 1
