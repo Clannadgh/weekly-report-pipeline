@@ -293,7 +293,7 @@ class LedgerEntry(BaseModel):
     display: str = ""
     spec: str = ""
     question_hash: str = ""
-    code_hash: str = "内置规则"
+    code_hash: str = "无代码"
     status: str = "ok"
     verdict: str = "none"
     diff: float | None = None

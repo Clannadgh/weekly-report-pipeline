@@ -1,8 +1,8 @@
 """S3 数据对账：拿 S2 的卡片去数据里取数，判对错，落 issues.json 与 ledger.json。
 
 边界：本步不做业务判断，不改纪要，不写正文。
-默认取数引擎是 pandasai：模型只负责生成取数代码，代码执行后由本步按容差判定，
-台账的 code_hash 记录这段代码；--engine builtin 可完全离线走内置规则，此时 code_hash 记「内置规则」。
+取数统一走 pandasai：模型只负责生成取数代码，代码执行后由本步按容差判定，
+台账的 code_hash 记录这段代码；没有内置规则兜底。
 """
 from __future__ import annotations
 
@@ -206,46 +206,6 @@ def _locate_entity(frame: pd.DataFrame, entity: str,
 
 # ---------------------------------------------------------------- 取数
 
-def _measure(frame: pd.DataFrame, metric: str) -> tuple[float, str] | None:
-    """按指标聚合，返回 (值, 单位)。取不到的返回 None。"""
-    columns = {_norm(c): str(c) for c in frame.columns}
-
-    def pick(*hints: str) -> str | None:
-        for hint in hints:
-            for key, column in columns.items():
-                if hint in key:
-                    return column
-        return None
-
-    if metric == "实收":
-        column = pick("实收", "销售额", "营收")
-        return (float(frame[column].sum()), "元") if column else None
-    if metric == "数量":
-        column = pick("销售数量", "数量", "销量")
-        return (float(frame[column].sum()), "件") if column else None
-    if metric == "毛利率":
-        rev = pick("实收", "销售额")
-        cost = pick("成本")
-        if not rev or not cost:
-            return None
-        total_rev = float(frame[rev].sum())
-        if total_rev == 0:
-            return None
-        return ((total_rev - float(frame[cost].sum())) / total_rev, "%")
-    if metric == "退货":
-        rev = pick("实收", "销售额")
-        if not rev:
-            return None
-        return (float((frame[rev] < 0).sum()), "笔")
-    return None
-
-
-def _slice(frame: pd.DataFrame, date_col: str, start: str, end: str) -> pd.DataFrame:
-    dates = pd.to_datetime(frame[date_col], errors="coerce")
-    mask = (dates >= pd.Timestamp(start)) & (dates <= pd.Timestamp(end))
-    return frame[mask]
-
-
 # ---------------------------------------------------------------- 判定
 
 def _ask_amount(qa, column: str, entity: str, metric: str, period: str,
@@ -260,42 +220,10 @@ def _ask_amount(qa, column: str, entity: str, metric: str, period: str,
     return float(value) if isinstance(value, (int, float)) else None
 
 
-def _judge(expect: str, current: float, base: float | None,
-           target: float | None, unit: str,
-           target_text: str = "") -> tuple[str, float | None, float | None, str]:
-    """返回 (verdict, diff, change, 说明)。"""
-    if expect in ("上升", "下降", "持平"):
-        if base is None or base == 0:
-            return "unsupported", None, None, "对比期没有可比数值"
-        change = (current - base) / abs(base)
-        if expect == "上升":
-            ok = change >= TOL_RATIO
-        elif expect == "下降":
-            ok = change <= -TOL_RATIO
-        else:
-            ok = abs(change) <= TOL_RATIO
-        return ("match" if ok else "mismatch"), change, change, ""
-
-    if expect in ("具体数值", "百分比"):
-        if target is None:
-            return "unsupported", None, None, "目标值「" + str(target_text) + "」折算不出数字"
-        diff = current - target
-        if unit == "元":
-            tolerance = max(TOL_AMOUNT_ABS, abs(target) * TOL_AMOUNT_PCT)
-        elif unit == "%":
-            tolerance = TOL_MARGIN
-        else:
-            tolerance = 0.0
-        ok = abs(diff) <= tolerance
-        return ("match" if ok else "mismatch"), diff, None, ""
-
-    return "unsupported", None, None, "期望说不清，不做判定"
-
-
 # ---------------------------------------------------------------- 主流程
 
 def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
-           engine: str = "pandasai", only: list[str] | None = None,
+           only: list[str] | None = None,
            overrides: dict | None = None) -> tuple[IssuesResult, list[str]]:
     run_dir = Path(run_dir)
     if not run_dir.is_dir() and run_root:
@@ -347,8 +275,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
             log.append("按记录ID去重：" + str(before - len(frame)) + " 行重复已剔除")
     log.append("数据 " + source + "，" + str(len(frame)) + " 行")
 
-    qa = None
-    if engine == "pandasai":
+    try:
         from .pandasai_glm import make_qa
 
         qa_frame = frame.copy()
@@ -362,6 +289,11 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         from .llm import get_config
 
         log.append("取数引擎 pandasai（模型 " + get_config().model + "）")
+    except Exception as exc:  # noqa: BLE001
+        result.state = "blocked"
+        result.message = "S3 需要 pandasai/GLM：" + str(exc)
+        _write(run_dir, result, ledger)
+        return result, log
 
     issues: list[IssueItem] = []
     results: list[ResultItem] = []
@@ -398,7 +330,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
             unit = "%"   # 这三类卡片比的是变化率，不是绝对金额
 
         qhash = ""
-        code_hash = "内置规则"
+        code_hash = "无代码"
         change = None
         diff = None
         amount_value: float | None = None
@@ -409,21 +341,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         is_change_card = expect in ("上升", "下降", "持平")
         if ratio_card is not None:
             unit = "倍"
-        if ratio_card is not None and qa is None:
-            value, target_ratio, note = _builtin_ratio(frame, date_col, quote, period)
-            current = value
-            verdict = "unsupported"
-            if value is not None and target_ratio is not None:
-                diff = value - target_ratio
-                verdict = "match" if abs(diff) <= TOL_RATIO else "mismatch"
-                change = diff
-            else:
-                diff = None
-            unit = "倍"
-            qhash = _qhash(card_id, "ratio", quote)
-            code_hash = "内置规则"
-            stats.ok += 1
-        elif qa is not None:
+        if qa is not None:
             qa_column = "_区域" if "推导" in column else column
             try:
                 out = _ask_card(qa, card, qa_column, entity, period, compare,
@@ -474,40 +392,6 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
             stats.ok += 1 if out.get("status") != "parse_failed" else 0
             if out.get("status") == "parse_failed":
                 stats.parse_failed += 1
-        else:
-            entity_frame = frame[mask]
-            if "至" in period:
-                p_start, p_end = [part.strip() for part in period.split("至", 1)]
-                try:
-                    entity_frame = _slice(entity_frame, date_col, p_start, p_end)
-                except Exception:
-                    pass
-            measure = _measure(entity_frame, metric)
-            if measure is None:
-                stats.info += 1
-                issues.append(IssueItem(
-                    id="Q" + str(len(issues) + 1).zfill(2), level="信息", type="caliber",
-                    card=card_id, subject=entity + " " + metric, minutes_said=quote,
-                    raw="", question_hash=_qhash(card_id, entity, metric),
-                    suggest="数据里没有能算「" + metric + "」的列，正文写无数据来源"))
-                continue
-            current, unit = measure
-            base = None
-            if compare and "至" in compare:
-                start, end = [part.strip() for part in compare.split("至", 1)]
-                try:
-                    base_frame = _slice(frame[mask], date_col, start, end)
-                    base_measure = _measure(base_frame, metric)
-                    base = base_measure[0] if base_measure else None
-                except Exception:
-                    base = None
-            target = _parse_target(card.get("target_value"))
-            verdict, diff, change, note = _judge(
-                expect, current, base, target, unit,
-                str(card.get("target_value") or ""))
-            qhash = _qhash(card_id, entity, metric)
-            stats.ok += 1
-
         if current is None:
             stats.info += 1
             issues.append(IssueItem(
@@ -934,8 +818,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", required=True, help="运行目录，如 runs/w44")
     parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--engine", choices=("pandasai", "builtin"), default="pandasai",
-                        help="取数引擎：pandasai（默认）或内置规则")
     parser.add_argument("--only", action="append", default=None,
                         help="只重算指定卡片，可重复，如 --only M09")
     parser.add_argument("--hint", default="",
@@ -949,8 +831,7 @@ def main(argv: list[str] | None = None) -> int:
         _save_override(run_dir, args.only, args.hint, args.hint)
 
     try:
-        result, log = run_s3(args.run, args.run_root, engine=args.engine,
-                             only=args.only)
+        result, log = run_s3(args.run, args.run_root, only=args.only)
     except FileNotFoundError as exc:
         print(json.dumps({"state": "blocked", "message": str(exc)}, ensure_ascii=False))
         return 1

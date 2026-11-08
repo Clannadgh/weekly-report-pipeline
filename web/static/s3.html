@@ -834,7 +834,7 @@
       } else {
         document.getElementById("engineDot").className = "dot bad";
         document.getElementById("engineNote").textContent =
-          "未找到 GLM_API_KEY，取数会失败；可改用内置规则引擎。";
+          "未找到 GLM_API_KEY，S3 无法取数；请先配置后再跑。";
       }
     })
     .catch(function () {});

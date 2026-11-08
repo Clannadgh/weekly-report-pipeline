@@ -718,9 +718,7 @@ class Handler(BaseHTTPRequestHandler):
                 _save_override(Path(folder), only, hint)
                 log("口径建议：" + "、".join(only) + " -> " + hint)
             log("S3 开始：" + folder + ("（只重算 " + "、".join(only) + "）" if only else ""))
-            result, logs = run_s3(folder,
-                                  engine=str(payload.get("engine") or "pandasai"),
-                                  only=only or None)
+            result, logs = run_s3(folder, only=only or None)
         except FileNotFoundError as exc:
             self.send_error_json(404, "前置文件缺失", str(exc))
             return
