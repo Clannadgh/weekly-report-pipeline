@@ -154,3 +154,75 @@ class Status(BaseModel):
     at: str = ""
     note: str = ""
     history: list[StatusHistory] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------- S2 纪要拆卡
+
+CardCheckable = Literal["能", "不能", "不确定"]
+CardsState = Literal["ok", "empty", "blocked"]
+
+
+class CardEntry(BaseModel):
+    """纪要的一个段落。"""
+    no: int = 0
+    region: str = ""
+    owner: str = ""
+    para: int = 0
+    text: str = ""
+
+
+class Card(BaseModel):
+    """一句话拆出来的一张卡片。十一项必填字段见 s2.txt 第 2 步。"""
+    id: str = ""
+    quote: str = ""
+    entity: str = "不确定"
+    entity_type: str = "未知"
+    metric: str = "其他"
+    unit: str = ""
+    period: str = ""
+    compare_period: str = ""
+    expect: str = "说不清"
+    target_value: str | None = None
+    checkable: CardCheckable = "不确定"
+    para: int = 0
+    sentence: int = 0
+    source: str = ""
+    note: str = ""
+
+
+class CardAction(BaseModel):
+    item: str = ""
+    owner: str = ""
+    due: str = ""
+    source: str = ""
+
+
+class CardFuture(BaseModel):
+    text: str = ""
+    source: str = ""
+
+
+class CardStats(BaseModel):
+    cards: int = 0
+    checkable: int = 0
+    unknown_entity: int = 0
+    unresolved_date: int = 0
+    actions: int = 0
+
+
+class CardsResult(BaseModel):
+    state: CardsState = "ok"
+    run_id: str = ""
+    dir: str = ""
+    source: str = ""
+    period: str = ""
+    compare_period: str = ""
+    entries: list[CardEntry] = Field(default_factory=list)
+    cards: list[Card] = Field(default_factory=list)
+    actions: list[CardAction] = Field(default_factory=list)
+    future: list[CardFuture] = Field(default_factory=list)
+    stats: CardStats = Field(default_factory=CardStats)
+    dropped: list[str] = Field(default_factory=list)
+    questions: list[str] = Field(default_factory=list)
+    message: str = ""
+    model: str = ""

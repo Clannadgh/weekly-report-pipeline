@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>经营周报 · 第二步 纪要拆卡</title>
+<style>
+
+  :root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --line: #dfe4ea;
+    --text: #1f2933;
+    --muted: #66727f;
+    --ok: #12864a;
+    --ok-bg: #e6f6ec;
+    --warn: #a15c00;
+    --warn-bg: #fdf3d8;
+    --stop: #b3261e;
+    --stop-bg: #fdeceb;
+    --accent: #17549c;
+    --accent-dark: #103f77;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  header.topbar {
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+    padding: 16px 24px 14px;
+  }
+  header.topbar h1 { margin: 0; font-size: 19px; letter-spacing: .5px; }
+  header.topbar p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main.layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px;
+    align-items: start;
+  }
+  @media (max-width: 920px) {
+    main.layout { grid-template-columns: minmax(0, 1fr); }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .panel > h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 700;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel > h2 .hint { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 6px; }
+
+  /* 输入区 */
+  #drop {
+    border: 2px dashed #c3ccd6;
+    border-radius: 8px;
+    padding: 18px 12px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: .15s;
+    background: #fafbfc;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); color: var(--accent); background: #f1f6fd; }
+  #drop strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 2px; }
+  #drop span { font-size: 12px; }
+  ul.filelist { list-style: none; margin: 10px 0 0; padding: 0; }
+  ul.filelist li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    background: #fbfcfd;
+  }
+  ul.filelist .fname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  ul.filelist .fsize { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  ul.filelist button {
+    border: 0; background: transparent; color: var(--stop);
+    cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px;
+  }
+  .empty-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  label.field { display: block; margin: 16px 0 6px; font-size: 13px; font-weight: 600; }
+  label.field .hint { font-weight: 400; color: var(--muted); }
+  textarea#prompt {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+    border: 1px solid #c3ccd6;
+    border-radius: 8px;
+    background: #fff;
+  }
+  textarea#prompt:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23,84,156,.12); }
+  .actions { display: flex; gap: 10px; margin-top: 14px; }
+  button.primary, button.ghost {
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 8px;
+    padding: 9px 18px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  button.primary { background: var(--accent); color: #fff; flex: 1; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+  button.primary:disabled { background: #9fb0c4; cursor: not-allowed; }
+  button.ghost { background: #fff; color: var(--text); border-color: #c3ccd6; }
+  button.ghost:hover { background: #f2f4f6; }
+  #progress { margin-top: 10px; font-size: 12px; color: var(--accent); min-height: 18px; }
+  #progress.busy::before {
+    content: "";
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-right: 6px;
+    border: 2px solid rgba(23,84,156,.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    vertical-align: -1px;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 错误条 */
+  #errorBar {
+    display: none;
+    border: 1px solid #f0b4b0;
+    background: var(--stop-bg);
+    color: var(--stop);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  #errorBar.show { display: block; }
+  #errorBar .etitle { font-weight: 700; }
+  #errorBar .edetail {
+    margin-top: 6px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 160px;
+    overflow: auto;
+    color: #7c1a15;
+  }
+
+  /* 判定条 */
+  .statebar {
+    border-radius: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .statebar .badge {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 3px 12px;
+    border-radius: 999px;
+    background: #eef1f4;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .statebar .msg { flex: 1; min-width: 200px; font-size: 13px; color: var(--text); }
+  .statebar.ok { background: var(--ok-bg); border-color: #b6e3c8; }
+  .statebar.ok .badge { background: var(--ok); color: #fff; }
+  .statebar.warn { background: var(--warn-bg); border-color: #f0dca4; }
+  .statebar.warn .badge { background: #c98a09; color: #fff; }
+  .statebar.stop { background: var(--stop-bg); border-color: #f0b4b0; }
+  .statebar.stop .badge { background: var(--stop); color: #fff; }
+  .statebar .meta { width: 100%; font-size: 12px; color: var(--muted); }
+
+  /* 统计卡 */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0 4px;
+  }
+  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: #fbfcfd;
+  }
+  .card .label { font-size: 12px; color: var(--muted); }
+  .card .value { font-size: 24px; font-weight: 700; line-height: 1.25; }
+
+  /* 分区 */
+  section.block { margin-top: 18px; }
+  section.block > h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 700;
+    padding-left: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  thead th {
+    background: #f2f4f7;
+    text-align: left;
+    font-weight: 600;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: #fafbfc; }
+  td.mono, .mono { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+  td.nowrap { white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 11.5px; display: block; margin-top: 2px; }
+  .tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    line-height: 18px;
+    white-space: nowrap;
+    background: #eef1f4;
+    color: #3d4854;
+  }
+  .tag.have { background: var(--ok-bg); color: var(--ok); border: 1px solid #b6e3c8; }
+  .tag.degrade { background: var(--warn-bg); color: var(--warn); border: 1px solid #f0dca4; }
+  .tag.missing { background: var(--stop-bg); color: var(--stop); border: 1px solid #f0b4b0; }
+  .tag.core { background: #e8f0fb; color: var(--accent); border: 1px solid #c3d8f2; }
+  .tag.extra { background: #f0f0f4; color: #555f6b; border: 1px solid #dcdfe5; }
+
+  .gapgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .gapbox { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #fbfcfd; }
+  .gapbox h4 { margin: 0 0 6px; font-size: 13px; font-weight: 700; }
+  .gapbox h4 .count { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .gapbox ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  .gapbox li { margin: 3px 0; }
+  .gapbox .none { color: var(--muted); font-size: 12.5px; margin: 0; }
+  .gapbox .li-sub { color: var(--muted); font-size: 12px; display: block; }
+
+  details.raw { margin-top: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd; }
+  details.raw summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  details.raw summary::-webkit-details-marker { display: none; }
+  details.raw summary::before { content: "▸"; margin-right: 6px; color: var(--muted); }
+  details.raw[open] summary::before { content: "▾"; }
+  details.raw summary .summary-label { flex: 1; }
+  details.raw pre {
+    margin: 0;
+    padding: 12px;
+    border-top: 1px solid var(--line);
+    background: #1f2933;
+    color: #e8eef5;
+    font-size: 12px;
+    line-height: 1.55;
+    overflow: auto;
+    max-height: 420px;
+    border-radius: 0 0 8px 8px;
+  }
+  button.mini {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #c3ccd6;
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button.mini:hover { background: #eef1f4; }
+
+  /* 历史 */
+  #historyList { display: grid; gap: 8px; }
+  .runitem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: #fbfcfd;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    width: 100%;
+  }
+  .runitem:hover { border-color: var(--accent); background: #f1f6fd; }
+  .runitem .run-tag { font-weight: 700; min-width: 52px; }
+  .runitem .run-state { flex: 1; }
+  .runitem .run-at { color: var(--muted); font-size: 12px; }
+  .placeholder {
+    border: 1px dashed #c3ccd6;
+    border-radius: 10px;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .hidden { display: none !important; }
+
+.llm-card{margin-top:14px;padding:10px 12px;border:1px solid #e2e6ee;border-radius:10px;background:#fafbfd}
+.llm-head{display:flex;align-items:center;gap:8px;font-size:13px}
+.llm-head .dot{width:8px;height:8px;border-radius:50%;background:#c3c9d4;flex:0 0 auto}
+.dot.ok{background:#2e9e5b}.dot.bad{background:#d64545}.dot.idle{background:#d9a520}
+.llm-head .ghost.small{margin-left:auto;padding:4px 10px;font-size:12px}
+.llm-card .empty-note{margin:6px 0 0;font-size:12px;color:#6b7280}
+.chat-link{display:inline-block;margin-top:10px;padding:7px 14px;border-radius:8px;background:#1f5fbf;color:#fff;text-decoration:none;font-size:13px}
+.chat-link:hover{background:#1a52a6}
+
+</style>
+<style>
+  select#runSelect {
+    width: 100%;
+    padding: 9px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    border: 1px solid #c3ccd6;
+    border-radius: 8px;
+    background: #fff;
+  }
+  select#runSelect:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23,84,156,.12); }
+  .runmeta { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd; padding: 10px 12px; }
+  .runmeta dl { margin: 0; display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 4px 10px; font-size: 12.5px; }
+  .runmeta dt { color: var(--muted); }
+  .runmeta dd { margin: 0; word-break: break-all; }
+  .quote-cell { min-width: 280px; max-width: 460px; line-height: 1.55; }
+  .stat-note { font-size: 11.5px; color: var(--muted); }
+  ol.plain { margin: 0; padding-left: 20px; font-size: 13px; }
+  ol.plain li { margin: 4px 0; }
+  .headlink { margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .headlink a {
+    display: inline-block; padding: 7px 14px; border-radius: 8px;
+    background: var(--accent); color: #fff; text-decoration: none; font-size: 13px;
+  }
+  .headlink a.ghostlink { background: #fff; color: var(--text); border: 1px solid #c3ccd6; }
+  .headlink a:hover { filter: brightness(.96); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>经营周报 · 第二步 纪要拆卡</h1>
+  <p>选一次已准入的运行，把纪要拆成一张张可核对的卡片。本步只整理，不判断对错、不算数字、不改原话。</p>
+  <div class="headlink">
+    <a class="ghostlink" href="/">← 第一步 准入检查</a>
+    <a class="ghostlink" href="/chat.html">和助手对话</a>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="panel">
+    <h2>输入 <span class="hint">只列 S1 已准入的运行</span></h2>
+
+    <label class="field" for="runSelect">选择运行</label>
+    <select id="runSelect"><option value="">加载中…</option></select>
+    <div class="runmeta" id="runMeta">
+      <p class="empty-note" style="margin:0">选中后显示周期与纪要文件。</p>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="runBtn" type="button" disabled>开始拆卡</button>
+      <button class="ghost" id="reloadBtn" type="button">刷新</button>
+    </div>
+    <div id="progress"></div>
+
+    <div class="llm-card">
+      <div class="llm-head">
+        <span class="dot idle" id="llmDot"></span>
+        <span>模型 <b id="llmModel">glm-5.3-flash</b></span>
+        <button id="llmBtn" class="ghost small" type="button">测试连接</button>
+      </div>
+      <p class="empty-note" id="llmMsg">使用 .env 里的 GLM_API_KEY</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>结果</h2>
+    <div id="errorBar">
+      <div class="etitle" id="errTitle"></div>
+      <div class="edetail" id="errDetail"></div>
+    </div>
+
+    <div id="placeholder" class="placeholder">
+      左侧选一次已准入的运行，点「开始拆卡」后在这里看卡片。
+    </div>
+
+    <div id="resultBody" class="hidden">
+      <div class="statebar" id="stateBar">
+        <span class="badge" id="stateBadge"></span>
+        <span class="msg" id="stateMsg"></span>
+        <span class="meta" id="stateMeta"></span>
+      </div>
+
+      <div class="stats">
+        <div class="card"><div class="label">卡片总数</div><div class="value" id="sCards">0</div></div>
+        <div class="card"><div class="label">可对数据</div><div class="value" id="sCheckable">0</div></div>
+        <div class="card"><div class="label">实体不确定</div><div class="value" id="sUnknown">0</div></div>
+        <div class="card"><div class="label">动作项</div><div class="value" id="sActions">0</div></div>
+      </div>
+
+      <section class="block">
+        <h3>卡片</h3>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>原话</th><th>实体</th><th>指标</th><th>期望</th>
+                <th>目标值</th><th>单位</th><th>可核对</th><th>出处</th>
+              </tr>
+            </thead>
+            <tbody id="cardRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="block" id="actionBlock">
+        <h3>动作项</h3>
+        <div class="tablewrap" id="actionWrap">
+          <table>
+            <thead><tr><th>事项</th><th>责任人</th><th>截止</th><th>出处</th></tr></thead>
+            <tbody id="actionRows"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="actionEmpty">无</p>
+      </section>
+
+      <section class="block" id="futureBlock">
+        <h3>未来事项</h3>
+        <ol class="plain" id="futureList"></ol>
+        <p class="empty-note" id="futureEmpty">无</p>
+      </section>
+
+      <section class="block" id="dropBlock">
+        <h3>校验丢弃</h3>
+        <div class="gapbox"><ul id="dropList"></ul></div>
+        <p class="empty-note" id="dropEmpty">无</p>
+      </section>
+
+      <details class="raw">
+        <summary><span class="summary-label">原始 JSON（cards.json）</span><button class="mini" id="copyBtn" type="button">复制</button></summary>
+        <pre id="rawJson"></pre>
+      </details>
+    </div>
+
+    <section class="block" id="historyBlock">
+      <h3>历史运行</h3>
+      <div id="historyList"></div>
+    </section>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var runSelect = document.getElementById("runSelect");
+  var runMeta = document.getElementById("runMeta");
+  var runBtn = document.getElementById("runBtn");
+  var reloadBtn = document.getElementById("reloadBtn");
+  var progress = document.getElementById("progress");
+  var errorBar = document.getElementById("errorBar");
+  var errTitle = document.getElementById("errTitle");
+  var errDetail = document.getElementById("errDetail");
+  var placeholder = document.getElementById("placeholder");
+  var resultBody = document.getElementById("resultBody");
+  var historyList = document.getElementById("historyList");
+  var allRuns = [];
+  var current = null;
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function showError(title, detail) {
+    errTitle.textContent = title || "出错了";
+    errDetail.textContent = detail || "";
+    errorBar.classList.add("show");
+  }
+  function clearError() { errorBar.classList.remove("show"); errDetail.textContent = ""; }
+
+  function setBusy(busy, text) {
+    runBtn.disabled = busy || !current;
+    reloadBtn.disabled = busy;
+    runBtn.textContent = busy ? "拆卡中…" : (current && current.has_cards ? "重新拆卡" : "开始拆卡");
+    progress.textContent = busy ? (text || "正在读纪要并拆卡，首次约需 10–30 秒…") : "";
+    progress.className = busy ? "busy" : "";
+  }
+
+  function fillMeta(run) {
+    runMeta.textContent = "";
+    if (!run) {
+      runMeta.appendChild(el("p", "empty-note", "选中后显示周期与纪要文件。"));
+      return;
+    }
+    var dl = el("dl");
+    function row(k, v) {
+      dl.appendChild(el("dt", "", k));
+      dl.appendChild(el("dd", "", v || "—"));
+    }
+    row("周期", run.period);
+    row("对比期", run.compare);
+    row("纪要", run.minutes_file);
+    row("目录", run.dir);
+    row("已拆卡", run.has_cards ? (run.cards + " 张") : "未拆");
+    runMeta.appendChild(dl);
+  }
+
+  function renderHistory() {
+    historyList.textContent = "";
+    if (!allRuns.length) {
+      historyList.appendChild(el("p", "empty-note", "还没有已准入的运行，先回第一步。"));
+      return;
+    }
+    allRuns.forEach(function (run) {
+      var btn = el("button", "runitem");
+      btn.type = "button";
+      btn.appendChild(el("span", "run-tag", run.run_id));
+      btn.appendChild(el("span", "run-state", run.period || ""));
+      var tag = el("span", "tag " + (run.has_cards ? "have" : "extra"),
+                   run.has_cards ? (run.cards + " 张卡片") : "未拆卡");
+      btn.appendChild(tag);
+      btn.appendChild(el("span", "run-at", run.at || ""));
+      btn.addEventListener("click", function () {
+        runSelect.value = run.run_id;
+        onSelect();
+      });
+      historyList.appendChild(btn);
+    });
+  }
+
+  function loadRuns(selectId) {
+    fetch("/api/s2/runs")
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        allRuns = data.runs || [];
+        runSelect.textContent = "";
+        if (!allRuns.length) {
+          var opt = el("option", "", "没有已准入的运行");
+          opt.value = "";
+          runSelect.appendChild(opt);
+          current = null;
+          fillMeta(null);
+          renderHistory();
+          return;
+        }
+        allRuns.forEach(function (run) {
+          var opt = el("option", "", run.run_id + " · " + (run.period || ""));
+          opt.value = run.run_id;
+          runSelect.appendChild(opt);
+        });
+        var target = selectId || (current && current.run_id) || allRuns[0].run_id;
+        runSelect.value = target;
+        onSelect();
+        renderHistory();
+      })
+      .catch(function (err) { showError("读取运行列表失败", err.message); });
+  }
+
+  function onSelect() {
+    var runId = runSelect.value;
+    current = allRuns.filter(function (item) { return item.run_id === runId; })[0] || null;
+    fillMeta(current);
+    runBtn.disabled = !current;
+    runBtn.textContent = current && current.has_cards ? "重新拆卡" : "开始拆卡";
+    clearError();
+    if (!current) { showPlaceholder(); return; }
+    if (current.has_cards) {
+      fetch("/api/s2/" + encodeURIComponent(current.run_id))
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          if (data.ok && data.cards && data.cards.cards) render(data.cards);
+          else showPlaceholder();
+        })
+        .catch(function () { showPlaceholder(); });
+    } else {
+      showPlaceholder();
+    }
+  }
+
+  function showPlaceholder() {
+    resultBody.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+  }
+
+  function stateClass(state) {
+    if (state === "ok") return "ok";
+    if (state === "empty") return "warn";
+    return "stop";
+  }
+
+  function render(cards) {
+    placeholder.classList.add("hidden");
+    resultBody.classList.remove("hidden");
+
+    var bar = document.getElementById("stateBar");
+    bar.className = "statebar " + stateClass(cards.state);
+    document.getElementById("stateBadge").textContent =
+      cards.state === "ok" ? "拆卡完成" : (cards.state === "empty" ? "没有卡片" : "未通过");
+    document.getElementById("stateMsg").textContent = cards.message || "";
+    document.getElementById("stateMeta").textContent =
+      [cards.run_id, cards.source, cards.period, cards.model].filter(Boolean).join(" · ");
+
+    var stats = cards.stats || {};
+    document.getElementById("sCards").textContent = stats.cards || 0;
+    document.getElementById("sCheckable").textContent = stats.checkable || 0;
+    document.getElementById("sUnknown").textContent = stats.unknown_entity || 0;
+    document.getElementById("sActions").textContent = stats.actions || 0;
+
+    var rows = document.getElementById("cardRows");
+    rows.textContent = "";
+    (cards.cards || []).forEach(function (card) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "mono nowrap", card.id));
+      var td = el("td", "quote-cell", card.quote);
+      if (card.note) td.appendChild(el("span", "sub", card.note));
+      tr.appendChild(td);
+      var ent = el("td", "", card.entity || "不确定");
+      ent.appendChild(el("span", "sub", card.entity_type || "未知"));
+      tr.appendChild(ent);
+      tr.appendChild(el("td", "nowrap", card.metric || "其他"));
+      tr.appendChild(el("td", "nowrap", card.expect || "说不清"));
+      tr.appendChild(el("td", "nowrap mono", card.target_value === null ? "—" : String(card.target_value)));
+      tr.appendChild(el("td", "nowrap", card.unit || "—"));
+      var check = el("td", "nowrap");
+      check.appendChild(el("span", "tag " + (card.checkable === "能" ? "have" : (card.checkable === "不确定" ? "degrade" : "extra")), card.checkable));
+      tr.appendChild(check);
+      tr.appendChild(el("td", "sub", card.source || ""));
+      rows.appendChild(tr);
+    });
+    if (!(cards.cards || []).length) {
+      var emptyRow = el("tr");
+      var cell = el("td", "sub", "没有卡片");
+      cell.colSpan = 9;
+      emptyRow.appendChild(cell);
+      rows.appendChild(emptyRow);
+    }
+
+    var actionRows = document.getElementById("actionRows");
+    actionRows.textContent = "";
+    var actions = cards.actions || [];
+    document.getElementById("actionWrap").style.display = actions.length ? "" : "none";
+    document.getElementById("actionEmpty").style.display = actions.length ? "none" : "";
+    actions.forEach(function (item) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "", item.item || ""));
+      tr.appendChild(el("td", "nowrap", item.owner || ""));
+      tr.appendChild(el("td", "nowrap", item.due || ""));
+      tr.appendChild(el("td", "sub", item.source || ""));
+      actionRows.appendChild(tr);
+    });
+
+    var futureList = document.getElementById("futureList");
+    futureList.textContent = "";
+    var future = cards.future || [];
+    document.getElementById("futureList").style.display = future.length ? "" : "none";
+    document.getElementById("futureEmpty").style.display = future.length ? "none" : "";
+    future.forEach(function (item) {
+      var li = el("li", "", item.text || "");
+      if (item.source) li.appendChild(el("span", "sub", item.source));
+      futureList.appendChild(li);
+    });
+
+    var dropList = document.getElementById("dropList");
+    dropList.textContent = "";
+    var dropped = cards.dropped || [];
+    document.getElementById("dropBlock").style.display = dropped.length ? "" : "none";
+    dropped.forEach(function (text) { dropList.appendChild(el("li", "", text)); });
+
+    document.getElementById("rawJson").textContent = JSON.stringify(cards, null, 2);
+  }
+
+  runBtn.addEventListener("click", function () {
+    if (!current) return;
+    clearError();
+    setBusy(true);
+    fetch("/api/s2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: current.run_id, force: !!current.has_cards })
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) { return { status: resp.status, data: data }; });
+      })
+      .then(function (result) {
+        if (!result.data.ok) {
+          showError(result.data.error || "拆卡失败", result.data.detail || "");
+          return;
+        }
+        render(result.data.cards);
+        current.has_cards = true;
+        current.cards = (result.data.cards.stats || {}).cards || 0;
+        fillMeta(current);
+        renderHistory();
+      })
+      .catch(function (err) { showError("请求失败", err.message); })
+      .finally(function () { setBusy(false); });
+  });
+
+  reloadBtn.addEventListener("click", function () { loadRuns(runSelect.value); });
+  runSelect.addEventListener("change", onSelect);
+
+  document.getElementById("copyBtn").addEventListener("click", function () {
+    var text = document.getElementById("rawJson").textContent;
+    if (navigator.clipboard) navigator.clipboard.writeText(text);
+  });
+
+  // ---- 模型状态 ----
+  var llmDot = document.getElementById("llmDot");
+  var llmModel = document.getElementById("llmModel");
+  var llmMsg = document.getElementById("llmMsg");
+  var llmBtn = document.getElementById("llmBtn");
+
+  function setLlm(state, text) {
+    llmDot.className = "dot " + state;
+    llmMsg.textContent = text;
+  }
+
+  fetch("/api/llm")
+    .then(function (resp) { return resp.json(); })
+    .then(function (data) {
+      llmModel.textContent = data.model || "未配置";
+      if (!data.configured) { setLlm("bad", data.error || "未找到 GLM_API_KEY"); return; }
+      setLlm("idle", "密钥已加载，点右侧测试连接");
+    })
+    .catch(function (err) { setLlm("bad", "读取配置失败：" + err.message); });
+
+  llmBtn.addEventListener("click", function () {
+    llmBtn.disabled = true;
+    setLlm("idle", "正在连接…");
+    fetch("/api/llm/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (data.ok) setLlm("ok", "连接正常，回复「" + (data.reply || "") + "」，" + (data.elapsed_ms || 0) + " ms");
+        else setLlm("bad", data.error || "连接失败");
+      })
+      .catch(function (err) { setLlm("bad", "连接失败：" + err.message); })
+      .finally(function () { llmBtn.disabled = false; });
+  });
+
+  loadRuns();
+})();
+</script>
+</body>
+</html>

@@ -11,7 +11,7 @@ cp .env.example .env        # 填入 GLM_API_KEY
 双击 启动界面.bat            # 或 python web/server.py --port 8000
 ```
 
-打开 http://127.0.0.1:8000/chat.html ，上传数据文件与纪要，直接说「请按 2026 年第 44 周出经营周报」。
+打开 http://127.0.0.1:8000 ，上传数据文件与纪要，先跑第一步准入检查；通过后到 http://127.0.0.1:8000/s2.html 选这次运行，点「开始拆卡」。也可以直接和助手对话：http://127.0.0.1:8000/chat.html 。
 
 ## 结构
 
@@ -19,6 +19,7 @@ cp .env.example .env        # 填入 GLM_API_KEY
 |---|---|
 | `pipeline/s1_intake.py` | S1 准入检查：清点、判角色、抽周期与需求、对账、判定、落盘 |
 | `pipeline/domain_map.py` | 用 GLM 把纪要里的指标/实体映射到数据列，按输入哈希落盘冻结 |
+| `pipeline/s2_cards.py` | S2 纪要拆卡：切句、拆卡、抽动作与未来事项，落盘 `cards.json` |
 | `pipeline/agent.py` | 主 agent：对话 + 工具调用，不计算、不改判定 |
 | `pipeline/llm.py` | 智谱 GLM 客户端（OpenAI 兼容，仅标准库） |
 | `web/server.py` | 本地 HTTP 服务（仅标准库） |
@@ -36,7 +37,7 @@ cp .env.example .env        # 填入 GLM_API_KEY
 ## 进度
 
 - [x] S1 准入检查（代码判定 + AI 指标映射）
-- [ ] S2 纪要拆卡
+- [x] S2 纪要拆卡（模型读句拆卡 + 代码校验原话与枚举）
 - [ ] S3 数据对账
 - [ ] S4 修纪要底稿
 - [ ] S5 扩写出图

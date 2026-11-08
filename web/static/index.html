@@ -342,13 +342,19 @@
 .llm-card .empty-note{margin:6px 0 0;font-size:12px;color:#6b7280}
 .chat-link{display:inline-block;margin-top:10px;padding:7px 14px;border-radius:8px;background:#1f5fbf;color:#fff;text-decoration:none;font-size:13px}
 .chat-link:hover{background:#1a52a6}
+.chat-link.ghost{background:#fff;color:var(--accent);border:1px solid #c3ccd6}
+.chat-link.ghost:hover{background:#f1f6fd}
+.headlinks{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
 </style>
 </head>
 <body>
 <header class="topbar">
   <h1>经营周报 · 第一步 准入检查</h1>
   <p>上传数据文件与会议纪要，填写提示词，先判断本周能否进入写作环节。</p>
-  <a class="chat-link" href="/chat.html">和助手对话 →</a>
+  <div class="headlinks">
+    <a class="chat-link" href="/s2.html">第二步 纪要拆卡 →</a>
+    <a class="chat-link ghost" href="/chat.html">和助手对话</a>
+  </div>
 </header>
 
 <main class="layout">

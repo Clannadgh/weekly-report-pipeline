@@ -310,6 +310,47 @@ def load_run(tag: str) -> dict | None:
     }
 
 
+# ---------------------------------------------------------------- S2 纪要拆卡
+
+def list_s2_runs() -> list[dict]:
+    """只列 S1 已准入通过的运行，附上是否已经拆过卡。"""
+    if not os.path.isdir(RUNS_DIR):
+        return []
+    items: list[dict] = []
+    for entry in sorted(os.listdir(RUNS_DIR)):
+        folder = os.path.join(RUNS_DIR, entry)
+        if entry.startswith("_") or not os.path.isdir(folder):
+            continue
+        intake = try_read_json(os.path.join(folder, "intake.json"))
+        if not intake or intake.get("state") != "准入通过":
+            continue
+        run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
+        minutes = intake.get("minutes") if isinstance(intake.get("minutes"), dict) else {}
+        files = intake.get("files") or []
+        minutes_name = ""
+        for info in files:
+            if isinstance(info, dict) and info.get("role") == "纪要":
+                minutes_name = str(info.get("name") or "")
+                break
+        cards_path = os.path.join(folder, "cards.json")
+        cards = try_read_json(cards_path) if os.path.isfile(cards_path) else {}
+        status = try_read_json(os.path.join(folder, "status.json"))
+        items.append({
+            "run_id": str(run.get("period_tag") or entry),
+            "dir": str(run.get("dir") or entry),
+            "at": str(status.get("at") or ""),
+            "period": (str(minutes.get("period_start") or "") + " 至 "
+                       + str(minutes.get("period_end") or "")).strip(" 至"),
+            "compare": (str(minutes.get("compare_start") or "") + " 至 "
+                        + str(minutes.get("compare_end") or "")).strip(" 至"),
+            "minutes_file": minutes_name,
+            "cards": int((cards.get("stats") or {}).get("cards") or 0),
+            "has_cards": bool(cards),
+        })
+    items.sort(key=lambda item: item["at"], reverse=True)
+    return items
+
+
 def status_for_intake(intake: dict) -> dict:
     """POST 之后回读 status.json；还没落盘就返回空对象，不替 S1 编状态。"""
     run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
@@ -358,6 +399,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.serve_index()
             elif path in ("/chat", "/chat.html"):
                 self.serve_static("chat.html")
+            elif path in ("/s2", "/s2.html"):
+                self.serve_static("s2.html")
+            elif path == "/api/s2/runs":
+                self.send_json({"ok": True, "runs": list_s2_runs()})
+            elif path.startswith("/api/s2/"):
+                self.serve_s2_cards(path[len("/api/s2/"):])
             elif path == "/api/health":
                 self.send_json({"ok": True})
             elif path == "/api/llm":
@@ -396,6 +443,46 @@ class Handler(BaseHTTPRequestHandler):
         with open(target, "rb") as handle:
             body = handle.read()
         self._send(200, body, "text/html; charset=utf-8")
+
+    def serve_s2_cards(self, tag: str) -> None:
+        """读某次运行已落盘的 cards.json；没拆过就明确说没有，不现场补跑。"""
+        folder = resolve_run_dir(unquote(tag))
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + unquote(tag))
+            return
+        path = os.path.join(folder, "cards.json")
+        if not os.path.isfile(path):
+            self.send_json({"ok": False, "run_id": unquote(tag), "cards": {},
+                            "error": "这次运行还没拆过卡"})
+            return
+        self.send_json({"ok": True, "cards": try_read_json(path)})
+
+    def handle_s2(self) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        run_id = str(payload.get("run_id") or "").strip()
+        if not run_id:
+            self.send_error_json(400, "缺少 run_id", "")
+            return
+        folder = resolve_run_dir(run_id)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + run_id)
+            return
+        try:
+            from pipeline.s2_cards import run_s2
+
+            log("S2 开始：" + folder)
+            result, logs = run_s2(folder, force=bool(payload.get("force")))
+        except FileNotFoundError as exc:
+            self.send_error_json(404, "前置文件缺失", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给前端
+            log("S2 失败：" + repr(exc))
+            self.send_error_json(500, "S2 执行失败", traceback.format_exc())
+            return
+        log("S2 完成：" + result.message)
+        self.send_json({"ok": True, "cards": result.model_dump(mode="json"), "log": logs})
 
     def serve_run(self, tag: str) -> None:
         data = load_run(tag)
@@ -587,6 +674,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/llm/test":
             self.handle_llm_test()
+            return
+        if path == "/api/s2":
+            self.handle_s2()
             return
         if path == "/api/chat/session":
             self.handle_chat_session()
