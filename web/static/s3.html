@@ -694,8 +694,9 @@
       lv.appendChild(levelTag(item.level));
       tr.appendChild(lv);
       var sub = el("td", "", item.subject || "");
-      sub.appendChild(el("span", "sub",
-        (item.card ? "来源 " + item.card : "全量扫描") + " · " + (item.type || "")));
+      var origin = item.card ? ("来源 " + item.card)
+                 : (item.type === "missing" ? "覆盖检查" : (item.type || ""));
+      sub.appendChild(el("span", "sub", origin));
       tr.appendChild(sub);
       tr.appendChild(el("td", "quote-cell", item.minutes_said || "—"));
       tr.appendChild(el("td", "mono nowrap", item.raw || "—"));

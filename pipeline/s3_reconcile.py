@@ -515,19 +515,6 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
 
         ))
 
-    mentioned = _mentioned_entities(cards, intake)
-    for anomaly in _scan_anomalies(frame, date_col, cards[0].get("period", ""),
-                                   cards[0].get("compare_period", ""), mentioned, source)[:8]:
-        stats.warn += 1
-        issues.append(IssueItem(
-            id="Q" + str(len(issues) + 1).zfill(2), level="提示", type="number",
-            card="", subject=anomaly["subject"] + "（" + anomaly["scope"] + "）",
-            minutes_said="纪要未提及",
-            raw=format(anomaly["change"] * 100, "+.1f") + "%",
-            value=anomaly["current"], diff=None,
-            question_hash=_qhash("anomaly", anomaly["scope"], anomaly["subject"]),
-            suggest=anomaly["note"] + "；报告里需要补上或说明原因"))
-
     result.issues = issues
     result.results = results
     result.stats = stats
@@ -572,83 +559,6 @@ def _coverage(intake: dict, ledger: Ledger) -> list[dict]:
             out.append({"item": item, "status": "uncovered", "key": "",
                         "note": str(req.get("note") or req.get("impact") or "数据里没有对应列")})
     return out
-
-
-def _scan_anomalies(frame: pd.DataFrame, date_col: str, period: str, compare: str,
-                    mentioned: set[str], source: str) -> list[dict]:
-    """按区域和门店算环比，找出超过 10% 但纪要没提的对象。"""
-    if "至" not in period or "至" not in compare:
-        return []
-    p_start, p_end = [part.strip() for part in period.split("至", 1)]
-    c_start, c_end = [part.strip() for part in compare.split("至", 1)]
-
-    amount_col = next((str(c) for c in frame.columns
-                       if "实收" in str(c) or "销售额" in str(c)), None)
-    if amount_col is None:
-        return []
-    dates = pd.to_datetime(frame[date_col], errors="coerce")
-    current = frame[(dates >= pd.Timestamp(p_start)) & (dates <= pd.Timestamp(p_end))]
-    base = frame[(dates >= pd.Timestamp(c_start)) & (dates <= pd.Timestamp(c_end))]
-    if current.empty or base.empty:
-        return []
-
-    found: list[dict] = []
-    store_col = next((str(c) for c in frame.columns
-                      if "门店" in str(c) and "名称" in str(c)), None)
-
-    def add(label: str, scope: str, cur: float, prev: float) -> None:
-        if prev == 0:
-            return
-        change = (cur - prev) / abs(prev)
-        if abs(change) <= 0.10:
-            return
-        if _norm(label) in mentioned:
-            return
-        found.append({
-            "scope": scope, "subject": label, "change": change,
-            "current": cur, "previous": prev,
-            "display": format(cur, ",.0f"),
-            "note": "本周 " + format(cur, ",.0f") + " 元，环比 "
-                    + format(change * 100, "+.1f") + "%，纪要未提",
-        })
-
-    if store_col:
-        regions = frame[store_col].map(
-            lambda name: next((region for city, region in CITY_TO_REGION.items()
-                               if _norm(name).startswith(city)), ""))
-        current_region = current.copy()
-        base_region = base.copy()
-        current_region["_region"] = regions.loc[current.index]
-        base_region["_region"] = regions.loc[base.index]
-        for region, group in current_region.groupby("_region"):
-            if not region:
-                continue
-            prev_group = base_region[base_region["_region"] == region]
-            if prev_group.empty:
-                continue
-            add(region, "区域", float(group[amount_col].sum()),
-                float(prev_group[amount_col].sum()))
-        for store, group in current.groupby(store_col):
-            prev_group = base[base[store_col] == store]
-            if prev_group.empty:
-                continue
-            add(str(store), "门店", float(group[amount_col].sum()),
-                float(prev_group[amount_col].sum()))
-    found.sort(key=lambda item: -abs(item["change"]))
-    return found
-
-
-def _mentioned_entities(cards: list[dict], intake: dict) -> set[str]:
-    names: set[str] = set()
-    for card in cards:
-        entity = str(card.get("entity") or "")
-        if entity:
-            names.add(_norm(entity))
-            names.add(entity)
-    for entity in (intake.get("minutes") or {}).get("entities") or []:
-        names.add(_norm(entity))
-        names.add(str(entity))
-    return names
 
 
 # ---------------------------------------------------------------- pandasai 取数
