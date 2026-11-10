@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>经营周报 · 第六步 交付</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --line: #dfe4ea;
+    --text: #1f2933;
+    --muted: #66727f;
+    --ok: #12864a;
+    --ok-bg: #e6f6ec;
+    --warn: #a15c00;
+    --warn-bg: #fdf3d8;
+    --stop: #b3261e;
+    --stop-bg: #fdeceb;
+    --accent: #17549c;
+    --accent-dark: #103f77;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  header.topbar {
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+    padding: 16px 24px 14px;
+  }
+  header.topbar h1 { margin: 0; font-size: 19px; letter-spacing: .5px; }
+  header.topbar p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .headlink { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .headlink a {
+    display: inline-block; padding: 7px 14px; border-radius: 8px; background: #fff;
+    color: var(--text); border: 1px solid #c3ccd6; text-decoration: none; font-size: 13px;
+  }
+  .headlink a:hover { background: #f2f4f6; }
+  .headlink a.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  main.layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px;
+    align-items: start;
+  }
+  @media (max-width: 920px) {
+    main.layout { grid-template-columns: minmax(0, 1fr); }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .panel > h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 700;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel > h2 .hint { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 6px; }
+  label.field { display: block; margin: 16px 0 6px; font-size: 13px; font-weight: 600; }
+  label.field .hint { font-weight: 400; color: var(--muted); }
+  select {
+    width: 100%; padding: 8px 10px; border: 1px solid #c3ccd6; border-radius: 8px;
+    background: #fff; font: inherit; font-size: 13px; color: var(--text);
+  }
+  .actions { display: flex; gap: 10px; margin-top: 14px; }
+  button.primary, button.ghost {
+    font-family: inherit; font-size: 14px; border-radius: 8px; padding: 9px 18px;
+    cursor: pointer; border: 1px solid transparent;
+  }
+  button.primary { background: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+  button.primary:disabled { background: #9fb0c4; cursor: not-allowed; }
+  button.ghost { background: #fff; color: var(--text); border-color: #c3ccd6; }
+  button.ghost:hover:not(:disabled) { background: #f2f4f6; }
+  #progress { margin-top: 8px; font-size: 12px; color: var(--accent); min-height: 18px; }
+  .runmeta { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd; padding: 10px 12px; }
+  .runmeta dl { margin: 0; display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 4px 10px; font-size: 12.5px; }
+  .runmeta dt { color: var(--muted); }
+  .runmeta dd { margin: 0; word-break: break-all; }
+  .statebar {
+    border-radius: 10px; padding: 12px 14px; border: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-top: 12px;
+  }
+  .statebar .badge {
+    font-size: 14px; font-weight: 700; padding: 3px 12px; border-radius: 999px;
+    background: #eef1f4; color: var(--text); white-space: nowrap;
+  }
+  .statebar .msg { flex: 1; min-width: 180px; font-size: 13px; color: var(--text); }
+  .statebar.ok { background: var(--ok-bg); border-color: #b6e3c8; }
+  .statebar.ok .badge { background: var(--ok); color: #fff; }
+  .statebar.warn { background: var(--warn-bg); border-color: #f0dca4; }
+  .statebar.warn .badge { background: #c98a09; color: #fff; }
+  .statebar.stop { background: var(--stop-bg); border-color: #f0b4b0; }
+  .statebar.stop .badge { background: var(--stop); color: #fff; }
+  .chat-link {
+    display: inline-block; padding: 7px 14px; border-radius: 8px; background: #1f5fbf;
+    color: #fff; text-decoration: none; font-size: 13px;
+  }
+  .chat-link:hover { background: #1a52a6; }
+  .chat-link.ghost { background: #fff; color: var(--accent); border: 1px solid #c3ccd6; }
+  .chat-link.ghost:hover { background: #f1f6fd; }
+  .deliver-form { margin-top: 12px; }
+  .review-sign {
+    margin: 0 0 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fbfcfd; font-size: 13px; color: var(--text);
+  }
+  .run-hint { margin: 8px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  #errorBar {
+    display: none; border: 1px solid #f0b4b0; background: var(--stop-bg); color: var(--stop);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 13px;
+  }
+  #errorBar.show { display: block; }
+  #errorBar .etitle { font-weight: 700; }
+  #errorBar .edetail {
+    margin-top: 6px; font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; color: #7c1a15;
+  }
+  .placeholder { border: 1px dashed #c9d2dc; border-radius: 10px; padding: 28px 20px; color: var(--muted); text-align: center; font-size: 13px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0 4px; }
+  .stats.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 620px) { .stats, .stats.two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: #fbfcfd; }
+  .card .label { font-size: 12px; color: var(--muted); }
+  .card .value { font-size: 24px; font-weight: 700; line-height: 1.25; }
+  .card .value.small { font-size: 13px; font-weight: 600; word-break: break-all; }
+  section.block { margin-top: 18px; }
+  section.block > h3 {
+    margin: 0 0 8px; font-size: 14px; font-weight: 700; padding-left: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  section.block > h3 .hint { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .delivery-files { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .delivery-file {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font-size: 12.5px;
+  }
+  .delivery-file a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .delivery-file a:hover { text-decoration: underline; }
+  .delivery-file .size { color: var(--muted); font-family: Consolas, "Courier New", monospace; font-size: 11.5px; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  thead th { background: #f2f4f7; text-align: left; font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: #fafbfc; }
+  td.mono, .mono { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+  .empty-note { color: var(--muted); font-size: 12.5px; }
+  .hidden { display: none !important; }
+  details.block summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--text); }
+  pre.manifest {
+    margin: 10px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fbfcfd; font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    line-height: 1.55; max-height: 420px; overflow: auto; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>经营周报 · 第六步 交付</h1>
+  <p>只接受 S5 审核通过并签名的稿子；签名已在审核时记录，这里按内容指纹 + 版式版本生成交付包，同内容重复交付返回原版本。</p>
+  <div class="headlink">
+    <a href="/">第一步 准入</a>
+    <a href="/s2.html">第二步 拆卡</a>
+    <a href="/s3.html">第三步 对账</a>
+    <a href="/s4.html">第四步 修纪要</a>
+    <a href="/s5.html">第五步 扩写审核</a>
+    <a href="/s6.html" class="on">第六步 交付</a>
+    <a href="/chat.html">和助手对话</a>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="panel">
+    <h2>输入 <span class="hint">S5 审核通过的运行</span></h2>
+
+    <label class="field" for="runSelect">选择运行</label>
+    <select id="runSelect"><option value="">加载中…</option></select>
+    <div class="runmeta" id="runMeta">
+      <p class="empty-note" style="margin:0">选中后显示周期、审核和交付状态。</p>
+    </div>
+
+    <div class="statebar warn" id="gateBar">
+      <span class="badge" id="gateBadge">—</span>
+      <span class="msg" id="gateMsg">选中运行后显示交付条件。</span>
+      <span id="gateLink"></span>
+    </div>
+
+    <div class="deliver-form hidden" id="deliverForm">
+      <p class="review-sign" id="reviewSign">审核签名：—</p>
+      <div class="actions">
+        <button class="primary" id="deliverBtn" type="button">生成交付包</button>
+      </div>
+      <p class="run-hint">签名已在第五步审核通过时记录；同内容重复交付返回原版本，只有内容指纹或版式版本变化才递增版本。</p>
+      <div id="progress"></div>
+    </div>
+
+    <div class="actions">
+      <button class="ghost" id="reloadBtn" type="button">刷新</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>交付包</h2>
+    <div id="errorBar">
+      <div class="etitle" id="errTitle"></div>
+      <div class="edetail" id="errDetail"></div>
+    </div>
+
+    <div id="placeholder" class="placeholder">左侧选一个已通过审核并签名的运行，点「生成交付包」后在这里查看版本与下载入口。</div>
+
+    <div id="resultBody" class="hidden">
+      <div class="stats two">
+        <div class="card"><div class="label">最新版本</div><div class="value" id="sVersion">—</div></div>
+        <div class="card"><div class="label">文件数</div><div class="value" id="sFiles">—</div></div>
+        <div class="card"><div class="label">审核签名</div><div class="value small" id="sReviewer">—</div></div>
+        <div class="card"><div class="label">交付时间</div><div class="value small" id="sDeliveredAt">—</div></div>
+      </div>
+
+      <section class="block">
+        <h3>下载 <span class="hint">docx 主产物、md、图、台账、清单</span></h3>
+        <div class="delivery-files" id="deliveryFiles"></div>
+        <p class="empty-note hidden" id="filesEmpty">还没有交付包。</p>
+      </section>
+
+      <section class="block">
+        <h3>版本历史 <span class="hint">同内容幂等，历史版本不覆盖</span></h3>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>版本</th><th>交付时间</th><th>内容指纹</th><th>文件数</th></tr></thead>
+            <tbody id="versionRows"></tbody>
+          </table>
+        </div>
+        <p class="empty-note hidden" id="versionsEmpty">还没有版本。</p>
+      </section>
+
+      <details class="block" id="manifestBlock">
+        <summary>交付清单（manifest.json）</summary>
+        <pre class="manifest" id="manifestJson"></pre>
+      </details>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var runSelect = document.getElementById("runSelect");
+  var runMeta = document.getElementById("runMeta");
+  var gateBar = document.getElementById("gateBar");
+  var gateBadge = document.getElementById("gateBadge");
+  var gateMsg = document.getElementById("gateMsg");
+  var gateLink = document.getElementById("gateLink");
+  var deliverForm = document.getElementById("deliverForm");
+  var reviewSign = document.getElementById("reviewSign");
+  var deliverBtn = document.getElementById("deliverBtn");
+  var progress = document.getElementById("progress");
+  var reloadBtn = document.getElementById("reloadBtn");
+  var errorBar = document.getElementById("errorBar");
+  var errTitle = document.getElementById("errTitle");
+  var errDetail = document.getElementById("errDetail");
+  var placeholder = document.getElementById("placeholder");
+  var resultBody = document.getElementById("resultBody");
+  var sVersion = document.getElementById("sVersion");
+  var sFiles = document.getElementById("sFiles");
+  var sReviewer = document.getElementById("sReviewer");
+  var sDeliveredAt = document.getElementById("sDeliveredAt");
+  var deliveryFiles = document.getElementById("deliveryFiles");
+  var filesEmpty = document.getElementById("filesEmpty");
+  var versionRows = document.getElementById("versionRows");
+  var versionsEmpty = document.getElementById("versionsEmpty");
+  var manifestBlock = document.getElementById("manifestBlock");
+  var manifestJson = document.getElementById("manifestJson");
+
+  var allRuns = [];
+  var current = null;
+  var busy = false;
+  var requestedRun = "";
+  try {
+    requestedRun = new URLSearchParams(window.location.search).get("run") || "";
+  } catch (e) { requestedRun = ""; }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function showError(title, detail) {
+    errTitle.textContent = title || "出错了";
+    errDetail.textContent = detail || "";
+    errorBar.classList.add("show");
+  }
+
+  function clearError() {
+    errorBar.classList.remove("show");
+    errTitle.textContent = "";
+    errDetail.textContent = "";
+  }
+
+  function fmtBytes(value) {
+    var number = Number(value);
+    if (!isFinite(number) || number <= 0) return "—";
+    if (number < 1024) return number + " B";
+    if (number < 1024 * 1024) return (number / 1024).toFixed(1) + " KB";
+    return (number / 1024 / 1024).toFixed(1) + " MB";
+  }
+
+  function stateTone(state) {
+    if (state === "已通过") return "ok";
+    if (state === "已交付") return "ok";
+    if (state === "待审核" || state === "已生成") return "warn";
+    if (state === "退回修改") return "stop";
+    return "warn";
+  }
+
+  function s5Link(runId, label) {
+    var a = el("a", "chat-link ghost", label || "回第五步审核");
+    a.href = "/s5.html?run=" + encodeURIComponent(runId || "");
+    return a;
+  }
+
+  function fillMeta(data) {
+    var status = data.status || {};
+    var record = data.record || {};
+    runMeta.textContent = "";
+    var dl = el("dl");
+    function row(key, value) {
+      dl.appendChild(el("dt", "", key));
+      dl.appendChild(el("dd", "", value || "—"));
+    }
+    row("周期", data.period || data.week || "");
+    row("标题", data.title || "");
+    row("状态", status.state || "");
+    row("审核人", record.reviewer || "");
+    row("审核签名", record.signature || record.reviewer || "");
+    row("审核时间", record.at || "");
+    row("审核结论", record.decision === "pass" ? "通过" : (record.decision || ""));
+    row("目录", data.dir || "");
+    runMeta.appendChild(dl);
+  }
+
+  function render(data) {
+    var status = data.status || {};
+    var record = data.record || {};
+    var state = String(status.state || "");
+    var pkg = data.delivery || {};
+    var versions = Array.isArray(pkg.versions) ? pkg.versions : [];
+    var manifest = pkg.manifest || {};
+    var files = Array.isArray(pkg.files) ? pkg.files : [];
+
+    fillMeta(data);
+
+    var approved = state === "已通过";
+    var delivered = state === "已交付";
+    var signature = String(record.signature || record.reviewer || "");
+    var reviewed = String(record.state || "") === "已通过"
+      && String(record.decision || "") === "pass"
+      && !!String(record.reviewer || "")
+      && !!signature;
+    gateBar.className = "statebar " + (approved && !reviewed ? "warn" : stateTone(state));
+    gateBadge.textContent = state || "未出稿";
+    gateLink.textContent = "";
+    reviewSign.textContent = "审核签名：" + (signature || "—");
+
+    if ((approved && reviewed) || delivered) {
+      deliverForm.classList.remove("hidden");
+      deliverBtn.textContent = delivered ? "重新交付" : "生成交付包";
+      gateMsg.textContent = status.note
+        || (delivered ? "已交付归档；同内容重复交付返回原版本。"
+                      : "审核已通过并签名，点生成交付包。");
+    } else {
+      deliverForm.classList.add("hidden");
+      if (approved) {
+        gateMsg.textContent = "审核记录缺少签名、通过结论或审核人，先回第五步补齐审核。";
+      } else {
+        gateMsg.textContent = status.note
+          || ("当前状态：" + (state || "未知") + "；S6 只交付 S5 审核通过的稿子。");
+      }
+      gateLink.appendChild(s5Link(data.run_id, "去第五步审核"));
+    }
+
+    if (versions.length) {
+      var latest = versions[versions.length - 1];
+      placeholder.classList.add("hidden");
+      resultBody.classList.remove("hidden");
+      sVersion.textContent = latest.version || "—";
+      sFiles.textContent = String(files.length || (manifest.files || []).length || 0);
+      sReviewer.textContent = (manifest.review || {}).signature
+        || (manifest.review || {}).reviewer || signature || "—";
+      sDeliveredAt.textContent = latest.delivered_at || manifest.delivered_at || "—";
+
+      deliveryFiles.textContent = "";
+      files.forEach(function (file) {
+        var row = el("div", "delivery-file");
+        var link = el("a", "", file.name || "下载");
+        link.href = file.url || "#";
+        link.target = "_blank";
+        link.rel = "noopener";
+        row.appendChild(link);
+        row.appendChild(el("span", "size", fmtBytes(file.bytes)));
+        deliveryFiles.appendChild(row);
+      });
+      filesEmpty.classList.toggle("hidden", files.length > 0);
+
+      versionRows.textContent = "";
+      versions.slice().reverse().forEach(function (item) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "mono", item.version || "—"));
+        tr.appendChild(el("td", "", item.delivered_at || "—"));
+        tr.appendChild(el("td", "mono", String(item.content_fingerprint || "").slice(0, 12) || "—"));
+        tr.appendChild(el("td", "mono", String(item.files || 0)));
+        versionRows.appendChild(tr);
+      });
+      versionsEmpty.classList.add("hidden");
+
+      manifestJson.textContent = JSON.stringify(manifest, null, 2);
+      manifestBlock.classList.toggle("hidden", !Object.keys(manifest).length);
+    } else {
+      resultBody.classList.add("hidden");
+      placeholder.classList.remove("hidden");
+      if (approved) {
+        placeholder.textContent = "审核已通过并签名；点生成交付包后，这里显示版本与下载入口。";
+      } else if (state === "已交付") {
+        placeholder.textContent = "已交付，但没有读到交付清单；请检查 deliver 目录。";
+      } else {
+        placeholder.textContent = "当前还没有交付包；先去第五步完成审核。";
+      }
+    }
+  }
+
+  function onSelect() {
+    var runId = runSelect.value;
+    if (!runId) return;
+    current = null;
+    clearError();
+    progress.textContent = "";
+    fetch("/api/s6/" + encodeURIComponent(runId), { cache: "no-store" })
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data.ok) throw new Error(data.error || "读取运行失败");
+        current = data;
+        render(data);
+      })
+      .catch(function (err) {
+        showError("读取运行失败", err.message || String(err));
+      });
+  }
+
+  function preferredRun() {
+    var approved = allRuns.filter(function (item) { return item.state === "已通过"; });
+    if (approved.length) return approved[0].run_id;
+    var delivered = allRuns.filter(function (item) { return item.state === "已交付"; });
+    return delivered.length ? delivered[0].run_id : "";
+  }
+
+  function loadRuns(selectId) {
+    fetch("/api/s6/runs", { cache: "no-store" })
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        allRuns = (data && data.runs) || [];
+        runSelect.textContent = "";
+        if (!allRuns.length) {
+          var empty = el("option", "", "没有可交付的运行");
+          empty.value = "";
+          runSelect.appendChild(empty);
+          current = null;
+          runMeta.textContent = "";
+          runMeta.appendChild(el("p", "empty-note", "还没有可交付的运行，先去第五步扩写并审核。"));
+          gateBadge.textContent = "—";
+          gateMsg.textContent = "S6 只交付 S5 审核通过的运行。";
+          gateLink.textContent = "";
+          deliverForm.classList.add("hidden");
+          resultBody.classList.add("hidden");
+          placeholder.classList.remove("hidden");
+          placeholder.textContent = "还没有可交付的运行，先去第五步扩写并审核。";
+          return;
+        }
+        allRuns.forEach(function (run) {
+          var label = run.run_id + " · " + (run.period || run.week || "");
+          if (run.state) label += " · " + run.state;
+          if (run.figures) label += " · " + run.figures + " 图";
+          var option = el("option", "", label);
+          option.value = run.run_id;
+          runSelect.appendChild(option);
+        });
+        var target = requestedRun || selectId || (current && current.run_id) || preferredRun();
+        if (!allRuns.some(function (item) { return item.run_id === target; })) {
+          target = allRuns[0].run_id;
+        }
+        requestedRun = "";
+        runSelect.value = target;
+        onSelect();
+      })
+      .catch(function (err) {
+        showError("读取运行列表失败", err.message || String(err));
+      });
+  }
+
+  function deliver() {
+    if (!current || busy) return;
+    if (!window.confirm("现在生成交付包？会按当前内容出版本，同内容不会重复生成。")) return;
+    clearError();
+    busy = true;
+    deliverBtn.disabled = true;
+    deliverBtn.textContent = "生成中…";
+    progress.textContent = "正在排版、生成 Word 并打包…";
+    var runId = current.run_id;
+    fetch("/api/s6/" + encodeURIComponent(runId) + "/deliver", {
+      method: "POST"
+    })
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data.ok) throw new Error(data.message || data.error || "交付失败");
+        progress.textContent = data.message || ("已交付 " + (data.version || ""));
+        if (current) {
+          current.status = current.status || {};
+          current.status.state = data.state || "已交付";
+          current.status.note = data.message || current.status.note || "";
+        }
+        return fetch("/api/s6/" + encodeURIComponent(runId), { cache: "no-store" })
+          .then(function (resp) { return resp.json(); })
+          .then(function (view) {
+            if (view && view.ok) {
+              current = view;
+              render(view);
+            }
+          });
+      })
+      .catch(function (err) {
+        showError("交付失败", err.message || String(err));
+        progress.textContent = "";
+      })
+      .finally(function () {
+        busy = false;
+        deliverBtn.disabled = false;
+        var state = current && current.status ? String(current.status.state || "") : "";
+        deliverBtn.textContent = state === "已交付" ? "重新交付" : "生成交付包";
+      });
+  }
+
+  runSelect.addEventListener("change", onSelect);
+  reloadBtn.addEventListener("click", function () { loadRuns(runSelect.value); });
+  deliverBtn.addEventListener("click", deliver);
+
+  loadRuns("");
+})();
+</script>
+</body>
+</html>

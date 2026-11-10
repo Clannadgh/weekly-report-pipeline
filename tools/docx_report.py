@@ -79,15 +79,40 @@ def _three_line(table, header_rows: int = 1) -> None:
 
 
 def _figure_paths(figure_dir: Path, manifest: Path | None) -> dict[int, Path]:
-    """图号 → PNG 路径。优先读图表清单，读不到按文件名 fig01_* 排序兜底。"""
+    """图号 → PNG 路径。兼容两种清单：{no, files:[{path}]} 与 {number, name}。"""
     mapping: dict[int, Path] = {}
     if manifest and manifest.exists():
         data = json.loads(manifest.read_text(encoding="utf-8"))
-        for fig in data.get("figures", []):
-            for item in fig.get("files", []):
-                p = Path(item["path"])
+        for index, fig in enumerate(data.get("figures", []), 1):
+            number = fig.get("no") if fig.get("no") is not None else fig.get("number", index)
+            try:
+                number = int(number)
+            except (TypeError, ValueError):
+                number = index
+            files = fig.get("files") or []
+            picked = None
+            candidates: list[str] = []
+            if isinstance(files, dict):
+                candidates = [str(value) for value in files.values()]
+            elif isinstance(files, list):
+                for item in files:
+                    candidates.append(str(item.get("path") or "")
+                                      if isinstance(item, dict) else str(item))
+            for raw in candidates:
+                p = Path(raw)
                 if p.suffix.lower() == ".png":
-                    mapping[int(fig["no"])] = p if p.exists() else figure_dir / p.name
+                    picked = p if p.exists() else figure_dir / p.name
+                    break
+            if picked is None and fig.get("name"):
+                candidate = figure_dir / (str(fig["name"]) + ".png")
+                if candidate.exists():
+                    picked = candidate
+            if picked is None:
+                candidate = figure_dir / ("fig" + str(number).zfill(2) + ".png")
+                if candidate.exists():
+                    picked = candidate
+            if picked is not None:
+                mapping[number] = picked
     if not mapping and figure_dir.exists():
         pngs = sorted(figure_dir.glob("fig*.png"))
         for i, p in enumerate(pngs, 1):

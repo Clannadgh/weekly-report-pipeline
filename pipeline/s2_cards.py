@@ -266,6 +266,12 @@ def run_s2(run_dir: str | Path, run_root: str | Path | None = None,
         run_dir = Path(run_root) / run_dir
     log: list[str] = []
     clear_approvals(run_dir, ("s2", "s3"))
+    for stale in ("issues.json", "ledger.json", "corrected.json"):
+        try:
+            (run_dir / stale).unlink()
+        except FileNotFoundError:
+            continue
+    log.append("本次重跑 S2，已清理下游产物 issues.json / ledger.json / corrected.json")
 
     intake = _load_intake(run_dir)
     result = CardsResult()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""text_stats —— 把「规范.md」里能数的项数出来，供 S6 质检取证。
+"""text_stats —— 把「规范.md」里能数的项数出来，供 S5 统计与审计取证。
 
 只做确定性的计数与扫描，不做判断、不改正文：
   - 正文字数（按规范剔除图表题注与附录）
@@ -15,7 +15,7 @@
 两个阶段分开判，规则见 规范.md 第六节：
 
     --stage draft   S5 写作稿：度量值都是 [[f:…]]，裸数字必须为 0
-    --stage final   S6 终稿：占位符必须为 0，数字必须能在台账里找到来源
+    --stage final   S5 终稿：占位符必须为 0，数字必须能在台账里找到来源
 
 用法：
     python tools/text_stats.py draft.md --spec 规范.md --stage draft --json

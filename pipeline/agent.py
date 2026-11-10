@@ -10,7 +10,7 @@ import json
 import uuid
 from pathlib import Path
 
-from .approvals import load as load_approvals
+from .approvals import load as load_approvals, tally as tally_approvals
 from .llm import chat, chat_stream
 from .s1_intake import STEPS, run_intake
 
@@ -34,45 +34,85 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
    - 还没跑过 S1 → 直接调 run_s1；
    - S1 是暂停或待补充 → 追问缺的那一项（例如「还缺 1 份纪要」），不要列历史运行让用户选；
    - S1 已准入但还没拆卡 → 调 run_s2；
+   - S2 已拆卡但还没对账 → 调 run_s3；
+   - S3 已对账、阻断建议都已有结论但还没修纪要 → 调 run_s4；
+   - S4 已可扩写但还没写正文 → 调 run_s5；
+   - S3 有阻断还没裁决 → 提示用户到 S3 详情逐条「批准/拒绝」，不要调 run_s4；
    - 只有用户明确说「看看以前的运行」或问「上次/之前/上次缺什么」时，才调用 list_runs。
    - 用户问「上次」时，先看 list_runs 返回的 history 和 attempts：同一周期重跑会复用目录，但历次状态和归档都在。
      不要因为当前只有一个运行目录，就说「之前没有失败的运行」。
 10. list_runs 只返回本次会话的运行记录。别的会话的 w42/w43/w44 不属于当前上下文，不要主动提，
     也不要把它们当成可选项让用户挑。
 11. 用户明确说「不用管」「忽略」「豁免」某条冲突时，调用 waive_conflicts，把用户的原话作为 reason 传进去。
-    这是人工裁决，不是工具改判：豁免会写进 waiver.json，S8 归档时能查到是谁、什么时候、为什么放行。
+    这是人工裁决，不是工具改判：豁免会写进 waiver.json，交付归档时能查到是谁、什么时候、为什么放行。
     用户没说之前，绝不自己决定忽略。
 12. 豁免后必须重跑一次 S1，以新的 state 为准；不要假设豁免一定会让状态变成准入通过。
-13. 出周报的顺序是 S1 → S2。只有本次会话的 S1 返回「准入通过」时才能调 run_s2；
+13. 出周报的顺序是 S1 → S2 → S3 → S4 → S5 → S6。只有本次会话的 S1 返回「准入通过」时才能调 run_s2；
     S1 还是暂停或待补充时，先把问题处理完，不要跳过。
 14. S2 只整理不判断。卡片里的「能对数据」才是可核对的结论，「不能」「不确定」只是留档，
     不要把它们当成结论讲给用户。
 15. 转述 S2 结果时给三个数：卡片总数、可对数据数、动作项数；再挑可核对的卡片说原文和指标。
     不要自己计算卡片里的数字，也不要替 S2 判断卡片对不对。
-16. 一次只推进一个阶段：调完 run_s1 就报告结果并停下，等用户说「继续」再调 run_s2。
-    只有用户明确说「一路做完」「不用问我」时，才允许连续调用。
-17. 当前流水线实现到 S3。S4 改稿、S5 写正文还没接，
-    绝对不要自己写周报正文、章节标题、汇总表格，也不要把卡片原话改写成段落。
-    用户要正文时，直接说明「下一步 S4 改稿还没接入，现在给不了正文」。
+16. 一次只推进一个阶段：调完 run_s1 就报告结果并停下，等用户说「继续」再调 run_s2；
+    S3、S4、S5、S6 同理。只有用户明确说「一路做完」「不用问我」时，才允许连续调用。
+17. 当前流水线实现到 S6（S5 扩写与审核，S6 交付）。S5 写完稿会替换 [[f:键名]] 并自动送审：
+    状态从 可扩写 变为 待审核。不要自己替换占位符、不要手打数字顶上；
+    S5 返回 待审核 时，报字数、图数、热点数和正文片段，并提醒用户到 /s5.html 审核。
 18. 转述卡片时字段值照抄：指标、期望、单位、目标值是什么就说什么，
     不要把「具体数值」译成「七成」，也不要从原话里再加工出别的说法。
-19. 顺序是 S1 → S2 → S3。S3 对账要等 S2 拆完卡才能调；S1 没准入、S2 没拆卡时不要跳步。
+19. 顺序是 S1 → S2 → S3 → S4 → S5 → S6。S3 对账要等 S2 拆完卡；S4 修纪要要等 S3 对账完成、
+    阻断建议都有结论；S5 扩写要等 S4 返回可扩写，扩写完成会自动送审，审核通过后到 S6 交付；
+    S1 没准入、S2 没拆卡、S3 没对账、S4 没可扩写、S5 没完成或审核没通过时不要跳步。
 20. S3 返回 issues 时，先报三个数：阻断、提示、信息；再把阻断级的问题逐条念出来
-    （对象、纪要怎么说、数据是多少、建议怎么改）。有阻断时明确说「必须先处理才能往下」，
+    （对象、纪要怎么说、数据是多少、建议怎么改）。有阻断时明确说「要逐条确认建议才能往下」，
     不要用「基本一致」「大致吻合」这类话把 mismatch 说轻。
 21. S3 的数字只能照抄工具返回的 display / raw，不要自己再算一遍或换算单位。
-22. 每个阶段都要用户批准：
-    - 调 run_s2 前，先 check_approval(stage="s1")；未批准就提示用户点左侧 S1 节点旁的「批准」按钮，
-      或点「全部批准」，不要继续。
-    - 调 run_s3 前，先 check_approval(stage="s2")；未批准同样提示。
-    - S3 出结果后，进入下一步前 check_approval(stage="s3")；未批准同样提示。
-    approved=false 时不要重复跑同一阶段，等用户批准后再继续。
+22. 只有 S3 有阻断时才需要用户逐条处理建议：
+    - S1 准入通过、S2 拆完卡就可以直接继续，不需要批准，也不要让用户点确认。
+    - S1 不通过仍然走人工放权（补齐材料或按用户明确要求 waive_conflicts），
+      不要让模型替用户放行，也不要自己宣布准入通过。
+    - S3 有阻断（blocking > 0）时，提示用户打开 S3 详情，在「核对清单」里逐条点「批准」或「拒绝」：
+      批准＝采纳这条修改建议，S4 改稿会照此改；拒绝＝不改。也可以点「全部批准」接受剩余建议。
+    - 只有所有阻断都有结论后 S3 才算通过；进入下一步前调用 check_approval，
+      未通过时不要继续，也不要重复跑 S3。
+    - 阻断都裁决完后，用户说「继续」→ 调 run_s4 修纪要。S4 返回 state=待补充 时，
+      先把 blocked 项或待裁决卡列出来，不要继续 S5。
+    - S4 返回 state=可扩写 后，用户说「继续」→ 调 run_s5 扩写。S5 返回 state=待审核 时，
+      报字数、图数、热点数和正文片段；占位符已由 S5 收尾替换，不要自己改数字或状态。
 23. 用户对某张卡片的取数口径提出调整（例如「本周不算周六周日」「剔除停业那几天」）时，
     调 recalc_card：card_id 传卡片编号，hint 把用户的口径要求写成一句能被代码执行的说明
     （例如「只统计销售日期为周一至周五的记录，排除周六和周日」）。
     只重算这一张，其他卡片结果保留。不要自己重算数字，也不要改 ledger.json。
 24. 口径说明必须具体到能落成条件（字段 + 判断），不要写「合理一点」「按惯例」这类空话；
     写不出来就问用户要明确的判断条件。
+25. 用户在 S5 要增加 / 修改 / 删除数据发现的问题时，调 s5_questions：
+    - 先 list 拿现有编号；update / delete 必须带 id（如 D3）；add 必须带 question 和 shape
+      （一个总数=number，分组 / 排名 / 多行=table），reason 写为什么值得问。
+    - 用户说的口径要原样落到 question 里，不要自己改条件；拿不准形状就问，不要猜。
+    - 改完只是保存清单，不要声称已经重新扩写；告诉用户「重新扩写后生效」，
+      用户同意后再调 run_s5。reset 表示恢复自动出题。
+    - run_s5 默认增量：只重算新增 / 改动的问题，没改的复用当前稿结果；
+      用户明确说「全部重跑 / 全量重跑」时才传 full=true。
+    - 不要自己编造数据结果，也不要改 draft.md / ledger.json。
+26. S5 扩写完成会自动送审，没有单独送审工具。
+    - S5 返回 待审核 后，告诉用户打开 /s5.html 的审核台，由审核人填写签名并点「签名确认审核」
+      或「退回修改」；不要替审核人判断，不要自己宣布通过，也不要把「待审核」说成「已通过」。
+    - 签名是审核确认的一部分：审核人签名与通过结论一起写进 review_record.json，
+      S6 交付只读取这份签名，不再要求用户签第二次。
+    - 用户问审核结果或为什么退回时调 get_review，按 comments 的 back_to 回答：
+      S3（数字 / 口径 / 遗漏）先回 S3 重取数，再经 S4 改稿；S5（措辞 / 结构 / 篇幅 / 图表）
+      回 S5 重新扩写，扩写完成会再次自动送审。不要跳过 S3/S4 直接改正文。
+    - 同一周累计退回 3 次会标「需线下沟通」并暂停；遇到就提示用户先线下确认，不要继续扩写送审。
+    - 旧 qc_result.json 与当前稿哈希不一致时视为失效，不要当成 PASS 转述。
+27. S5 审核返回已通过后，用户说「交付 / 归档 / 出正式版 / 要 Word」时进入 S6：调 run_s6。
+    - run_s6 只读已落盘的成稿，按 S5 审核记录里的签名生成交付包；不要再向用户要交付签名。
+    - run_s6 生成 Word + Markdown + 图表 + 台账 + 图表清单 + 质检说明 +
+      审核记录 + 清单，落到 <运行目录>/deliver/<版本>/，状态改为 已交付。
+    - 同内容重复归档返回原版本（幂等），只有内容变化才递增版本；不要承诺「一定出新版本」。
+    - 不修改正文、不改数字、不重画图；用户要改内容，先回 S3/S5 并重新走 S5 审核。
+    - 用户问交付进度、第几版、文件在哪时调 get_delivery，给版本号、指纹前 12 位、文件数、审核人。
+      交付在 /s6.html 的第六步页面完成，审核签名已在 S5 记录；下载链接用工具返回的地址，不要自己拼路径。
+    - 原质检已并入 S5；没有独立质检结论时如实说「本轮无独立质检」，不要说成 PASS。
 """
 
 TOOLS = [
@@ -115,6 +155,110 @@ TOOLS = [
                             "产出问题清单与数字台账。必须在 S2 拆卡完成之后调用。"
                             "返回阻断/提示/信息条数、问题明细、覆盖率。"),
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_s4",
+            "description": ("对本次会话已对账的运行做 S4 修纪要：按 S3 问题清单和用户逐条裁决，"
+                            "把纪要里说错、说不清的单句改成和数据一致的说法，产出 corrected.json。"
+                            "必须在 S3 对账完成、阻断建议都有结论后调用。"
+                            "返回修正/保留/转未来/待处理条数、状态（可扩写/待补充）和待裁决卡。"),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_s5",
+            "description": ("对本次会话已修纪要的运行做 S5 扩写与送审：按 corrected.json 骨架补数据细节、"
+                            "按数据发现出图、在纪要骨架上补数据细节，产出 draft.md 并自动整理送审材料。"
+                            "使用 s5_questions.json 里的数据发现问题清单；没有清单时由模型出题并保存。"
+                            "已扩写过且只改了部分问题时，默认只重算改动的问题，其余复用当前结果。"
+                            "必须在 S4 返回 state=可扩写 后调用。"
+                            "完成后 state=待审核；返回字数、图数、热点、增量条数、审核轮次与正文片段；"
+                            "不要替审核人通过，也不要自己改数字或状态。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "full": {"type": "boolean",
+                             "description": "true=全量重跑；默认 false，只重算改动的问题"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "s5_questions",
+            "description": ("查看 / 增加 / 修改 / 删除 S5 数据发现的问题清单。"
+                            "action=list 查看当前清单；add 增加（question、shape 必填，reason 可选）；"
+                            "update 按 id 改 question/shape/reason；delete 按 id 删除；"
+                            "reset 删除清单，下次扩写重新由模型出题。"
+                            "保存后不会自动重跑；用户同意后再调 run_s5。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string",
+                               "enum": ["list", "add", "update", "delete", "reset"],
+                               "description": "要做的动作"},
+                    "run_id": {"type": "string",
+                               "description": "运行编号；不传用本次会话最近一次运行"},
+                    "id": {"type": "string",
+                           "description": "问题编号，如 D3；update / delete 必填"},
+                    "question": {"type": "string",
+                                 "description": "问题原文；add 必填，update 可选"},
+                    "shape": {"type": "string", "enum": ["number", "table"],
+                              "description": "number=一个数；table=分组/排名多行；add 必填"},
+                    "reason": {"type": "string",
+                               "description": "为什么值得问（一句话）"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_review",
+            "description": ("读 S5 审核状态、退回意见与归位（不改状态）。"
+                            "用户问「审核结果 / 为什么退回 / 退回改哪里」时调用。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string",
+                               "description": "运行编号；不传用本次会话最近一次运行"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_s6",
+            "description": ("S6 交付：把 S5 审核已通过并签名的稿子归档交付。检查审核结论与文件，"
+                            "按 S5 审核记录里的签名生成交付包（不再单独要签名）。"
+                            "生成 Word + Markdown + 图表 + 台账 + 图表清单 + 质检说明 + 审核记录 + 清单，"
+                            "落到 <运行目录>/deliver/<版本>/，状态改为 已交付。"
+                            "同内容重复归档返回原版本（幂等），只有内容变化才递增版本。"
+                            "不修改正文、不改数字、不重画图。"),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_delivery",
+            "description": ("读 S6 交付状态、版本列表与最新清单（不改状态）。"
+                            "用户问「交付到哪了 / 第几版 / 文件在哪 / 下载」时调用。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string",
+                               "description": "运行编号；不传用本次会话最近一次运行"},
+                },
+            },
         },
     },
     {
@@ -176,14 +320,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "check_approval",
-            "description": ("检查本次运行的 S3 结果是否已被用户点击批准。"
-                            "S3 出结果后、进入下一步前必须调用；approved=false 时提示用户先批准。"),
+            "description": ("检查本次运行的 S3 阻断建议是否都已有结论（批准或拒绝）。"
+                            "只有 S3 存在阻断时才需要调用；"
+                            "approved=false 时提示用户到 S3 详情逐条「批准/拒绝」或点「全部批准」，不要继续。"),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "run_id": {"type": "string", "description": "可选，默认最近一次运行"},
-                    "stage": {"type": "string", "enum": ["s1", "s2", "s3"],
-                              "description": "要查的阶段，默认 s3"},
                 },
             },
         },
@@ -204,6 +347,14 @@ def _read_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _blocking_ids(folder: Path) -> list[str]:
+    """当前 issues.json 里阻断项的 id，顺序与文件一致。"""
+    data = _read_json(folder / "issues.json")
+    items = data.get("issues") if isinstance(data, dict) else None
+    return [str(item.get("id")) for item in (items or [])
+            if isinstance(item, dict) and item.get("level") == "阻断" and item.get("id")]
 
 
 def _summarize(intake: dict) -> dict:
@@ -459,25 +610,31 @@ class Session:
         if not folder.is_dir():
             return {"ok": False, "approved": False,
                     "error": "找不到运行目录：" + run_id}
-        stage = str(args.get("stage") or "s3").strip().lower()
-        if stage not in ("s1", "s2", "s3"):
+        if not (folder / "issues.json").is_file():
             return {"ok": False, "approved": False,
-                    "error": "stage 只能是 s1/s2/s3"}
+                    "error": "还没有 S3 结果，先跑 S3。"}
+        blocking = _blocking_ids(folder)
+        if not blocking:
+            return {"ok": True, "run_id": run_id, "stage": "s3",
+                    "approved": True, "required": False, "blocking": 0,
+                    "pending": [], "note": ""}
         approvals = load_approvals(folder)
-        entry = approvals.get(stage) or {}
-        approved = bool(entry.get("approved"))
-        label = stage.upper()
+        state = tally_approvals(approvals.get("s3"), blocking)
         return {
             "ok": True,
             "run_id": run_id,
-            "stage": stage,
-            "approved": approved,
-            "at": entry.get("at") or "",
-            "by": entry.get("by") or "",
-            "approvals": approvals,
-            "note": ("" if approved else
-                     "用户还没有批准 " + label + "，请先点左侧 " + label +
-                     " 节点旁的「批准」按钮，或点「全部批准」，再继续。"),
+            "stage": "s3",
+            "approved": state["approved"],
+            "required": not state["approved"],
+            "blocking": state["total"],
+            "accepted": state["accepted"],
+            "rejected": state["rejected"],
+            "pending": state["pending"],
+            "at": (approvals.get("s3") or {}).get("at") or "",
+            "by": (approvals.get("s3") or {}).get("by") or "",
+            "note": ("" if state["approved"] else
+                     "还有 " + str(len(state["pending"])) + " 条阻断待处理，请用户打开 S3 详情，"
+                     "在「核对清单」里逐条点「批准」或「拒绝」，或点「全部批准」。"),
         }
 
     def _list_runs(self) -> dict:
@@ -529,9 +686,6 @@ class Session:
         folder = self.run_root / run_id
         if not folder.is_dir():
             return {"ok": False, "error": "找不到运行目录：" + run_id}
-        if not load_approvals(folder).get("s1", {}).get("approved"):
-            return {"ok": False, "approval_required": "s1",
-                    "error": "S1 还没有批准，请先点左侧 S1 节点旁的「批准」按钮，或点「全部批准」。"}
         try:
             from .s2_cards import run_s2
 
@@ -544,6 +698,23 @@ class Session:
         payload["log"] = logs[-6:]
         return payload
 
+    def _with_approval(self, folder: Path, payload: dict, logs: list) -> dict:
+        """把当前阻断与逐条结论一起返回，避免模型误以为旧批准仍然有效。"""
+        blocking = _blocking_ids(folder)
+        state = tally_approvals(load_approvals(folder).get("s3"), blocking)
+        payload["approved"] = state["approved"]
+        payload["approval_required"] = bool(blocking) and not state["approved"]
+        payload["blocking"] = state["total"]
+        payload["accepted"] = state["accepted"]
+        payload["rejected"] = state["rejected"]
+        payload["pending"] = state["pending"]
+        payload["approval_note"] = (
+            "" if state["approved"] else
+            "S3 有 " + str(len(state["pending"])) + " 条阻断待处理，请用户打开 S3 详情，"
+            "逐条点「批准」或「拒绝」，或点「全部批准」。")
+        payload["log"] = logs[-6:]
+        return payload
+
     def _run_s3(self, args: dict) -> dict:
         """S3 对账：用 pandasai 生成取数代码，判定由代码按容差做。"""
         run_id = str(args.get("run_id") or self.last_run or "").strip()
@@ -552,9 +723,6 @@ class Session:
         folder = self.run_root / run_id
         if not folder.is_dir():
             return {"ok": False, "error": "找不到运行目录：" + run_id}
-        if not load_approvals(folder).get("s2", {}).get("approved"):
-            return {"ok": False, "approval_required": "s2",
-                    "error": "S2 还没有批准，请先点左侧 S2 节点旁的「批准」按钮，或点「全部批准」。"}
         try:
             from .s3_reconcile import run_s3
 
@@ -564,12 +732,303 @@ class Session:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": "S3 执行失败：" + str(exc)}
         payload = _summarize_issues(result)
-        approved = bool(load_approvals(folder).get("s3", {}).get("approved"))
-        payload["approved"] = approved
-        payload["approval_note"] = ("" if approved else
-                                    "需要用户点左侧 S3 节点旁的「批准」按钮后才能进入下一步。")
-        payload["log"] = logs[-6:]
+        return self._with_approval(folder, payload, logs)
+
+    def _run_s4(self, args: dict) -> dict:
+        """S4 修纪要：读 S3 问题与用户裁决，逐句改纪要底稿。"""
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S1 → S2 → S3。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s4_draft import run_s4
+
+            outcome = run_s4(folder)
+        except FileNotFoundError as exc:
+            return {"ok": False, "error": "前置文件缺失：" + str(exc)}
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给模型转述
+            return {"ok": False, "error": "S4 执行失败：" + str(exc)}
+        data = outcome.to_dict() if hasattr(outcome, "to_dict") else outcome
+        corrected = data.get("corrected") or {}
+        payload = {
+            "ok": bool(data.get("ok")),
+            "state": data.get("state") or "",
+            "message": data.get("message") or "",
+            "run_id": data.get("run_id") or run_id,
+            "week": data.get("week") or "",
+            "stats": corrected.get("stats") or {},
+            "items": [
+                {key: item.get(key) for key in
+                 ("id", "status", "original", "fixed", "basis", "issue", "note", "confirmed")}
+                for item in (corrected.get("items") or [])
+                if item.get("status") != "kept"
+            ][:12],
+            "cards": corrected.get("cards") or [],
+            "future_count": len(corrected.get("future") or []),
+            "log": (data.get("log") or [])[-6:],
+        }
         return payload
+
+    def _run_s5(self, args: dict) -> dict:
+        """S5 扩写：画像、发现、出图，在纪要骨架上补细节，产出带占位符的 draft.md。"""
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S1 → S2 → S3 → S4。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s5_write import run_s5
+
+            outcome = run_s5(folder, full=bool(args.get("full")))
+        except FileNotFoundError as exc:
+            return {"ok": False, "error": "前置文件缺失：" + str(exc)}
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给模型转述
+            return {"ok": False, "error": "S5 执行失败：" + str(exc)}
+        data = outcome.to_dict() if hasattr(outcome, "to_dict") else outcome
+        stats = data.get("stats") or {}
+        pages = stats.get("pages_estimate")
+        hotspots = []
+        for item in (data.get("hotspots") or [])[:8]:
+            change = item.get("change")
+            impact = item.get("impact")
+            hotspots.append({
+                "object": item.get("object") or "",
+                "metric": item.get("metric") or "",
+                "change": (f"{float(change) * 100:+.1f}%" if isinstance(change, (int, float)) else ""),
+                "impact": (f"{float(impact):,.0f}" if isinstance(impact, (int, float)) else ""),
+                "written": bool(item.get("written")),
+                "section": item.get("section") or "",
+            })
+        figures = [{
+            "number": item.get("number"), "title": item.get("title") or "",
+            "caption": item.get("caption") or "",
+        } for item in (data.get("figures") or [])]
+        payload = {
+            "ok": bool(data.get("ok")),
+            "state": data.get("state") or "",
+            "message": data.get("message") or "",
+            "run_id": data.get("run_id") or run_id,
+            "week": data.get("week") or "",
+            "stats": {
+                "chars": stats.get("chars_body_rendered") or 0,
+                "figures": stats.get("figures") or 0,
+                "hotspots": stats.get("hotspots") or 0,
+                "pages": pages.get("value") if isinstance(pages, dict) else 0,
+                "sections": stats.get("section_count") or 0,
+                "placeholders": (stats.get("placeholders") or {}).get("total") or 0,
+            },
+            "figures": figures,
+            "hotspots": hotspots,
+            "questions": len(data.get("questions") or []),
+            "questions_source": data.get("questions_source") or "",
+            "incremental": bool(data.get("incremental")),
+            "recomputed": int(data.get("recomputed") or 0),
+            "reused": int(data.get("reused") or 0),
+            "removed": int(data.get("removed") or 0),
+            "round": int((data.get("review") or {}).get("round") or 0),
+            "unconfirmed": len(((data.get("review") or {}).get("materials") or {})
+                               .get("unconfirmed") or []),
+            "review_page": "/s5.html?run=" + run_id,
+            "draft_excerpt": (data.get("draft") or "")[:700],
+            "log": (data.get("log") or [])[-6:],
+        }
+        return payload
+
+    def _s5_questions(self, args: dict) -> dict:
+        """S5 数据发现问题清单：查看 / 增删改 / 恢复自动出题。"""
+        action = str(args.get("action") or "list").strip().lower()
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S1 → S4。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s5_write import is_running
+
+            if is_running():
+                return {"ok": False, "error": "S5 正在运行，等它结束后再改问题。"}
+        except Exception:  # noqa: BLE001 - 运行标记失败不挡编辑
+            pass
+        try:
+            from . import s5_questions as sq
+
+            if action == "list":
+                payload = self._questions_payload(folder, run_id, action)
+                if payload.get("source") == "last_run":
+                    payload["note"] = ("这是当前稿的 "
+                                       + str(payload.get("count") or 0)
+                                       + " 条发现，不是完整问题清单；下次扩写会重新出题。"
+                                       "要沿用，先用 add / update 保存。")
+                elif payload.get("dirty"):
+                    payload["note"] = "清单已保存，但与当前稿不一致；重新扩写后生效。"
+                elif payload.get("applied"):
+                    payload["note"] = "清单已保存，当前稿已使用。"
+                else:
+                    payload["note"] = "清单已保存；下次扩写使用。"
+                return payload
+            if action == "reset":
+                sq.reset_plan(folder)
+                payload = self._questions_payload(folder, run_id, action)
+                payload["note"] = ("已恢复自动出题；下次扩写会重新生成问题。"
+                                   "当前显示的是上一稿的问题。")
+                return payload
+            if action not in ("add", "update", "delete"):
+                return {"ok": False,
+                        "error": "action 只能是 list / add / update / delete / reset。"}
+
+            current = sq.effective(folder)
+            questions = [dict(item) for item in current["questions"]]
+            if action == "add":
+                question = str(args.get("question") or "").strip()
+                shape = str(args.get("shape") or "").strip().lower()
+                if not question:
+                    return {"ok": False, "error": "add 需要 question。"}
+                if shape not in ("number", "table"):
+                    return {"ok": False,
+                            "error": "add 需要 shape：number（一个数）或 table（分组 / 排名多行）。"}
+                questions.append({
+                    "id": sq.next_id(questions),
+                    "question": question,
+                    "shape": shape,
+                    "reason": str(args.get("reason") or "").strip(),
+                })
+            elif action == "update":
+                qid = str(args.get("id") or "").strip()
+                if not qid:
+                    return {"ok": False, "error": "update 需要 id，例如 D3。"}
+                target = next((q for q in questions if str(q.get("id")) == qid), None)
+                if target is None:
+                    return {"ok": False,
+                            "error": "没有编号 " + qid + " 的问题；现有编号："
+                                     + "、".join(str(q.get("id")) for q in questions)}
+                changed = False
+                if args.get("question") is not None:
+                    target["question"] = str(args.get("question") or "").strip()
+                    changed = True
+                if args.get("shape") is not None:
+                    target["shape"] = str(args.get("shape") or "").strip().lower()
+                    changed = True
+                if args.get("reason") is not None:
+                    target["reason"] = str(args.get("reason") or "").strip()
+                    changed = True
+                if not changed:
+                    return {"ok": False,
+                            "error": "update 至少给一个要改的字段：question / shape / reason。"}
+            else:
+                qid = str(args.get("id") or "").strip()
+                if not qid:
+                    return {"ok": False, "error": "delete 需要 id，例如 D3。"}
+                before = len(questions)
+                questions = [q for q in questions if str(q.get("id")) != qid]
+                if len(questions) == before:
+                    return {"ok": False,
+                            "error": "没有编号 " + qid + " 的问题；现有编号："
+                                     + "、".join(str(q.get("id")) for q in questions)}
+
+            sq.save_plan(folder, questions, source="user", run_id=run_id)
+            payload = self._questions_payload(folder, run_id, action)
+            if payload.get("dirty"):
+                payload["note"] = "已保存。问题清单与当前稿不一致，重新扩写后才会生效。"
+            elif payload.get("applied"):
+                payload["note"] = "已保存；当前稿就是用这份清单生成的。"
+            else:
+                payload["note"] = ("已保存；下次扩写只跑清单里的 "
+                                   + str(payload.get("count") or 0)
+                                   + " 条问题，不会自动补题。")
+            return payload
+        except ValueError as exc:
+            return {"ok": False, "error": "问题清单无效：" + str(exc)}
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给模型转述
+            return {"ok": False, "error": "问题清单操作失败：" + str(exc)}
+
+    def _questions_payload(self, folder: Path, run_id: str, action: str) -> dict:
+        from . import s5_questions as sq
+
+        data = sq.effective(folder)
+        return {
+            "ok": True, "run_id": run_id, "action": action,
+            "count": data["count"], "source": data["source"],
+            "dirty": data["dirty"], "applied": data["applied"],
+            "updated_at": data["updated_at"],
+            "questions": data["questions"],
+        }
+
+    def _get_review(self, args: dict) -> dict:
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S5。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s5_review import read_status
+
+            data = read_status(folder)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": "读取 S5 审核状态失败：" + str(exc)}
+        data["ok"] = True
+        data["run_id"] = run_id
+        data["review_page"] = "/s5.html?run=" + run_id
+        return data
+
+    def _run_s6(self, args: dict) -> dict:
+        """S6 交付归档：只读成稿，按内容指纹出版本。"""
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S1 → S5 并通过审核。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s6_deliver import deliver
+
+            outcome = deliver(folder)
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给模型转述
+            return {"ok": False, "error": "交付失败：" + str(exc)}
+        data = outcome.to_dict()
+        return {
+            "ok": bool(data.get("ok")),
+            "state": data.get("state") or "",
+            "message": data.get("message") or "",
+            "run_id": data.get("run_id") or run_id,
+            "version": data.get("version") or "",
+            "path": data.get("path") or "",
+            "idempotent": bool(data.get("idempotent")),
+            "files": len(data.get("files") or []),
+            "fingerprint": str((data.get("manifest") or {}).get("content_fingerprint") or ""),
+            "deliver_page": "/s6.html?run=" + run_id,
+        }
+
+    def _get_delivery(self, args: dict) -> dict:
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S5 并通过审核。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        try:
+            from .s6_deliver import read_status
+
+            data = read_status(folder)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": "读取交付状态失败：" + str(exc)}
+        manifest = data.get("manifest") or {}
+        data["manifest"] = {
+            "version": manifest.get("version") or "",
+            "content_fingerprint": manifest.get("content_fingerprint") or "",
+            "layout_version": manifest.get("layout_version") or "",
+            "delivered_at": manifest.get("delivered_at") or "",
+            "files": len(manifest.get("files") or []),
+            "review": manifest.get("review") or {},
+            "qc": manifest.get("qc") or {},
+        }
+        data["ok"] = True
+        data["run_id"] = run_id
+        return data
 
     def _recalc_card(self, args: dict) -> dict:
         """只重算指定卡片，口径说明写进 overrides.json。"""
@@ -593,8 +1052,7 @@ class Session:
         payload = _summarize_issues(result)
         payload["recalculated"] = card_id
         payload["caliber_hint"] = hint
-        payload["log"] = logs[-6:]
-        return payload
+        return self._with_approval(folder, payload, logs)
 
     def _waive_conflicts(self, args: dict) -> dict:
         """登记人工豁免，然后重跑 S1。豁免只对本次运行生效，写进 waiver.json 留痕。"""
@@ -628,6 +1086,18 @@ class Session:
             return self._run_s2(args)
         if name == "run_s3":
             return self._run_s3(args)
+        if name == "run_s4":
+            return self._run_s4(args)
+        if name == "run_s5":
+            return self._run_s5(args)
+        if name == "s5_questions":
+            return self._s5_questions(args)
+        if name == "get_review":
+            return self._get_review(args)
+        if name == "run_s6":
+            return self._run_s6(args)
+        if name == "get_delivery":
+            return self._get_delivery(args)
         if name == "recalc_card":
             return self._recalc_card(args)
         if name == "waive_conflicts":

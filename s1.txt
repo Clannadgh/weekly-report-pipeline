@@ -94,7 +94,7 @@ next_action：准入通过 → continue；暂停、待补充 → wait。二选�
 周期能定（run.dir 非空）→ 把下面的 JSON 原样写入 <run.dir>/intake.json，
   目录不存在就先建；写盘失败 → state=暂停，不往下走。
 周期定不出 → 不建目录、不落盘，只在回复里给 JSON。
-S2–S8 一律读 intake.json，不读本步对话。
+S2–S5 一律读 intake.json，不读本步对话。
 
 【输出】只输出一个 JSON 对象，不附加解释
 {

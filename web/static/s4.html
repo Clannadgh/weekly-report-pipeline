@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>经营周报 · 第四步 修纪要</title>
+<style>
+
+  :root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --line: #dfe4ea;
+    --text: #1f2933;
+    --muted: #66727f;
+    --ok: #12864a;
+    --ok-bg: #e6f6ec;
+    --warn: #a15c00;
+    --warn-bg: #fdf3d8;
+    --stop: #b3261e;
+    --stop-bg: #fdeceb;
+    --accent: #17549c;
+    --accent-dark: #103f77;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  header.topbar {
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+    padding: 16px 24px 14px;
+  }
+  header.topbar h1 { margin: 0; font-size: 19px; letter-spacing: .5px; }
+  header.topbar p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main.layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px;
+    align-items: start;
+  }
+  @media (max-width: 920px) {
+    main.layout { grid-template-columns: minmax(0, 1fr); }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .panel > h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 700;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel > h2 .hint { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 6px; }
+
+  /* 输入区 */
+  #drop {
+    border: 2px dashed #c3ccd6;
+    border-radius: 8px;
+    padding: 18px 12px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: .15s;
+    background: #fafbfc;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); color: var(--accent); background: #f1f6fd; }
+  #drop strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 2px; }
+  #drop span { font-size: 12px; }
+  ul.filelist { list-style: none; margin: 10px 0 0; padding: 0; }
+  ul.filelist li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    background: #fbfcfd;
+  }
+  ul.filelist .fname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  ul.filelist .fsize { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  ul.filelist button {
+    border: 0; background: transparent; color: var(--stop);
+    cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px;
+  }
+  .empty-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  label.field { display: block; margin: 16px 0 6px; font-size: 13px; font-weight: 600; }
+  label.field .hint { font-weight: 400; color: var(--muted); }
+  textarea#prompt {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+    border: 1px solid #c3ccd6;
+    border-radius: 8px;
+    background: #fff;
+  }
+  textarea#prompt:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23,84,156,.12); }
+  .actions { display: flex; gap: 10px; margin-top: 14px; }
+  button.primary, button.ghost {
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 8px;
+    padding: 9px 18px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  button.primary { background: var(--accent); color: #fff; flex: 1; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+  button.primary:disabled { background: #9fb0c4; cursor: not-allowed; }
+  button.ghost { background: #fff; color: var(--text); border-color: #c3ccd6; }
+  button.ghost:hover { background: #f2f4f6; }
+  #progress { margin-top: 10px; font-size: 12px; color: var(--accent); min-height: 18px; }
+  #progress.busy::before {
+    content: "";
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-right: 6px;
+    border: 2px solid rgba(23,84,156,.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    vertical-align: -1px;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 错误条 */
+  #errorBar {
+    display: none;
+    border: 1px solid #f0b4b0;
+    background: var(--stop-bg);
+    color: var(--stop);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  #errorBar.show { display: block; }
+  #errorBar .etitle { font-weight: 700; }
+  #errorBar .edetail {
+    margin-top: 6px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 160px;
+    overflow: auto;
+    color: #7c1a15;
+  }
+
+  /* 判定条 */
+  .statebar {
+    border-radius: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .statebar .badge {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 3px 12px;
+    border-radius: 999px;
+    background: #eef1f4;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .statebar .msg { flex: 1; min-width: 200px; font-size: 13px; color: var(--text); }
+  .statebar.ok { background: var(--ok-bg); border-color: #b6e3c8; }
+  .statebar.ok .badge { background: var(--ok); color: #fff; }
+  .statebar.warn { background: var(--warn-bg); border-color: #f0dca4; }
+  .statebar.warn .badge { background: #c98a09; color: #fff; }
+  .statebar.stop { background: var(--stop-bg); border-color: #f0b4b0; }
+  .statebar.stop .badge { background: var(--stop); color: #fff; }
+  .statebar .meta { width: 100%; font-size: 12px; color: var(--muted); }
+
+  /* 统计卡 */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0 4px;
+  }
+  .stats.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: #fbfcfd;
+  }
+  .card .label { font-size: 12px; color: var(--muted); }
+  .card .value { font-size: 24px; font-weight: 700; line-height: 1.25; }
+
+  /* 分区 */
+  section.block { margin-top: 18px; }
+  section.block > h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 700;
+    padding-left: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  thead th {
+    background: #f2f4f7;
+    text-align: left;
+    font-weight: 600;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: #fafbfc; }
+  td.mono, .mono { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+  td.nowrap { white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 11.5px; display: block; margin-top: 2px; }
+  .tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    line-height: 18px;
+    white-space: nowrap;
+    background: #eef1f4;
+    color: #3d4854;
+  }
+  .tag.have { background: var(--ok-bg); color: var(--ok); border: 1px solid #b6e3c8; }
+  .tag.degrade { background: var(--warn-bg); color: var(--warn); border: 1px solid #f0dca4; }
+  .tag.missing { background: var(--stop-bg); color: var(--stop); border: 1px solid #f0b4b0; }
+  .tag.core { background: #e8f0fb; color: var(--accent); border: 1px solid #c3d8f2; }
+  .tag.extra { background: #f0f0f4; color: #555f6b; border: 1px solid #dcdfe5; }
+
+  .gapgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .gapbox { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #fbfcfd; }
+  .gapbox h4 { margin: 0 0 6px; font-size: 13px; font-weight: 700; }
+  .gapbox h4 .count { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .gapbox ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  .gapbox li { margin: 3px 0; }
+  .gapbox .none { color: var(--muted); font-size: 12.5px; margin: 0; }
+  .gapbox .li-sub { color: var(--muted); font-size: 12px; display: block; }
+
+  details.raw { margin-top: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd; }
+  details.raw summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  details.raw summary::-webkit-details-marker { display: none; }
+  details.raw summary::before { content: "▸"; margin-right: 6px; color: var(--muted); }
+  details.raw[open] summary::before { content: "▾"; }
+  details.raw summary .summary-label { flex: 1; }
+  details.raw pre {
+    margin: 0;
+    padding: 12px;
+    border-top: 1px solid var(--line);
+    background: #1f2933;
+    color: #e8eef5;
+    font-size: 12px;
+    line-height: 1.55;
+    overflow: auto;
+    max-height: 420px;
+    border-radius: 0 0 8px 8px;
+  }
+  button.mini {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #c3ccd6;
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button.mini:hover { background: #eef1f4; }
+
+  /* 历史 */
+  #historyList { display: grid; gap: 8px; }
+  .runitem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: #fbfcfd;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    width: 100%;
+  }
+  .runitem:hover { border-color: var(--accent); background: #f1f6fd; }
+  .runitem .run-tag { font-weight: 700; min-width: 52px; }
+  .runitem .run-state { flex: 1; }
+  .runitem .run-at { color: var(--muted); font-size: 12px; }
+  .placeholder {
+    border: 1px dashed #c3ccd6;
+    border-radius: 10px;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .hidden { display: none !important; }
+
+.llm-card{margin-top:14px;padding:10px 12px;border:1px solid #e2e6ee;border-radius:10px;background:#fafbfd}
+.llm-head{display:flex;align-items:center;gap:8px;font-size:13px}
+.llm-head .dot{width:8px;height:8px;border-radius:50%;background:#c3c9d4;flex:0 0 auto}
+.dot.ok{background:#2e9e5b}.dot.bad{background:#d64545}.dot.idle{background:#d9a520}
+.llm-head .ghost.small{margin-left:auto;padding:4px 10px;font-size:12px}
+.llm-card .empty-note{margin:6px 0 0;font-size:12px;color:#6b7280}
+.chat-link{display:inline-block;margin-top:10px;padding:7px 14px;border-radius:8px;background:#1f5fbf;color:#fff;text-decoration:none;font-size:13px}
+.chat-link:hover{background:#1a52a6}
+.chat-link.ghost{background:#fff;color:var(--accent);border:1px solid #c3ccd6}
+.chat-link.ghost:hover{background:#f1f6fd}
+.headlinks{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  button.mini.waive{margin-left:8px;border-color:#e0b7b3;color:var(--stop);font-size:11.5px;padding:2px 8px}
+  button.mini.waive:hover{background:#fdeceb}
+
+</style>
+<style>
+  select#runSelect{width:100%;padding:9px 10px;font-family:inherit;font-size:13px;color:var(--text);border:1px solid #c3ccd6;border-radius:8px;background:#fff}
+  select#runSelect:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(23,84,156,.12)}
+  .runmeta{margin-top:10px;border:1px solid var(--line);border-radius:8px;background:#fbfcfd;padding:10px 12px}
+  .runmeta dl{margin:0;display:grid;grid-template-columns:76px minmax(0,1fr);gap:4px 10px;font-size:12.5px}
+  .runmeta dt{color:var(--muted)}
+  .runmeta dd{margin:0;word-break:break-all}
+  .quote-cell{min-width:260px;max-width:420px;line-height:1.55}
+  .stat-note{font-size:11.5px;color:var(--muted)}
+  .headlink{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap}
+  .headlink a{display:inline-block;padding:7px 14px;border-radius:8px;background:#fff;color:var(--text);border:1px solid #c3ccd6;text-decoration:none;font-size:13px}
+  .headlink a:hover{background:#f1f6fd}
+  .tag.block{background:var(--stop-bg);color:var(--stop);border:1px solid #f0b4b0}
+  .tag.warn{background:var(--warn-bg);color:var(--warn);border:1px solid #f0dca4}
+  .tag.info{background:#eef1f4;color:#3d4854;border:1px solid #dcdfe5}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>经营周报 · 第四步 修纪要</h1>
+  <p>按 S3 问题清单逐句修纪要，改完的底稿给 S5 扩写；只在有阻断或提示的地方动笔，没有问题的句子原样保留。</p>
+  <div class="headlink">
+    <a href="/">第一步 准入</a>
+    <a href="/s2.html">第二步 拆卡</a>
+    <a href="/s3.html">第三步 对账</a>
+    <a href="/s5.html">第五步 扩写</a>
+    <a href="/chat.html">和助手对话</a>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="panel">
+    <h2>输入 <span class="hint">已对过账的运行</span></h2>
+
+    <label class="field" for="runSelect">选择运行</label>
+    <select id="runSelect"><option value="">加载中…</option></select>
+    <div class="runmeta" id="runMeta">
+      <p class="empty-note" style="margin:0">选中后显示卡片和裁决进度。</p>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="runBtn" type="button" disabled>开始修纪要</button>
+      <button class="ghost" id="reloadBtn" type="button">刷新</button>
+    </div>
+    <div id="progress"></div>
+
+    <div class="statebar warn hidden" id="blockWarn"></div>
+
+    <div class="llm-card">
+      <div class="llm-head">
+        <span class="dot idle" id="modelDot"></span>
+        <span>改句模型 <b id="modelName">加载中…</b></span>
+      </div>
+      <p class="empty-note" id="modelNote">S4 用模型逐句改纪要，只改有阻断或提示的句子。</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>结果</h2>
+    <div id="errorBar">
+      <div class="etitle" id="errTitle"></div>
+      <div class="edetail" id="errDetail"></div>
+    </div>
+
+    <div id="placeholder" class="placeholder">
+      左侧选一次对过账的运行，点「开始修纪要」后在这里看修正清单。
+    </div>
+
+    <div id="resultBody" class="hidden">
+      <div class="statebar" id="stateBar">
+        <span class="badge" id="stateBadge"></span>
+        <span class="msg" id="stateMsg"></span>
+        <span class="meta" id="stateMeta"></span>
+      </div>
+
+      <div class="stats two">
+        <div class="card"><div class="label">修正</div><div class="value" id="sCorrected">0</div></div>
+        <div class="card"><div class="label">待处理</div><div class="value" id="sBlocked">0</div></div>
+      </div>
+
+      <section class="block">
+        <h3>修正清单 <span class="hint" style="font-weight:400;font-size:12px;color:var(--muted)">只列真正改过的句子</span></h3>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>卡片</th><th>状态</th><th>原句</th><th>修正后</th><th>依据</th><th>问题</th><th>说明</th></tr>
+            </thead>
+            <tbody id="itemRows"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="itemEmpty">无</p>
+      </section>
+
+      <section class="block hidden" id="blockedBlock">
+        <h3>待处理 <span class="hint" style="font-weight:400;font-size:12px;color:var(--muted)">S4 没能自动改写的句子，需要人工处理</span></h3>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>卡片</th><th>原句</th><th>问题</th><th>说明</th></tr></thead>
+            <tbody id="blockedRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="block hidden" id="cardBlock">
+        <h3>待裁决 <span class="hint" style="font-weight:400;font-size:12px;color:var(--muted)">需要人定的地方，回第三步批准或拒绝</span></h3>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>编号</th><th>关联问题</th><th>待裁决问题</th><th>选项</th><th>建议</th></tr>
+            </thead>
+            <tbody id="cardRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <details class="raw">
+        <summary><span class="summary-label">原始 JSON（corrected.json）</span><button class="mini" id="copyBtn" type="button">复制</button></summary>
+        <pre id="rawJson"></pre>
+      </details>
+    </div>
+
+    <section class="block" id="historyBlock">
+      <h3>历史运行</h3>
+      <div id="historyList"></div>
+    </section>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var runSelect = document.getElementById("runSelect");
+  var runMeta = document.getElementById("runMeta");
+  var runBtn = document.getElementById("runBtn");
+  var reloadBtn = document.getElementById("reloadBtn");
+  var progress = document.getElementById("progress");
+  var blockWarn = document.getElementById("blockWarn");
+  var errorBar = document.getElementById("errorBar");
+  var errTitle = document.getElementById("errTitle");
+  var errDetail = document.getElementById("errDetail");
+  var placeholder = document.getElementById("placeholder");
+  var resultBody = document.getElementById("resultBody");
+  var historyList = document.getElementById("historyList");
+  var allRuns = [];
+  var current = null;
+  var busy = false;
+  var gateBlocked = false;
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function showError(title, detail) {
+    errTitle.textContent = title || "出错了";
+    errDetail.textContent = detail || "";
+    errorBar.classList.add("show");
+  }
+  function clearError() {
+    errorBar.classList.remove("show");
+    errTitle.textContent = "";
+    errDetail.textContent = "";
+  }
+
+  function updateActions() {
+    runBtn.disabled = busy || !current || gateBlocked;
+    reloadBtn.disabled = busy;
+    runBtn.textContent = busy ? "修改中…"
+      : (current && current.has_corrected ? "重新修纪要" : "开始修纪要");
+    progress.textContent = busy ? "正在逐句改纪要，约需 10–30 秒…" : "";
+    progress.className = busy ? "busy" : "";
+  }
+  function setBusy(value) {
+    busy = value;
+    updateActions();
+  }
+
+  function fillMeta(run) {
+    runMeta.textContent = "";
+    if (!run) {
+      runMeta.appendChild(el("p", "empty-note", "选中后显示卡片和裁决进度。"));
+      return;
+    }
+    var dl = el("dl");
+    function row(k, v) {
+      dl.appendChild(el("dt", "", k));
+      dl.appendChild(el("dd", "", v || "—"));
+    }
+    row("周期", run.period);
+    row("卡片", (run.cards || 0) + " 张，可核对 " + (run.checkable || 0) + " 张");
+    row("阻断", (run.blocking || 0) + " 条");
+    row("已裁决", (run.decided || 0) + " / " + (run.blocking || 0) + " 条");
+    row("修稿", run.has_corrected ? "已修" : "未修");
+    row("目录", run.dir);
+    runMeta.appendChild(dl);
+  }
+
+  function renderGate(run) {
+    blockWarn.textContent = "";
+    gateBlocked = false;
+    if (!run) { blockWarn.classList.add("hidden"); return; }
+    if (!run.has_issues) {
+      gateBlocked = true;
+      blockWarn.appendChild(el("span", "msg", "这次运行还没对账，先到第三步生成问题清单"));
+      var goS3 = el("a", "chat-link ghost", "去第三步对账");
+      goS3.href = "/s3.html";
+      blockWarn.appendChild(goS3);
+      blockWarn.classList.remove("hidden");
+      return;
+    }
+    var blocking = run.blocking || 0;
+    var decided = run.decided || 0;
+    if (blocking > decided) {
+      gateBlocked = true;
+      var left = blocking - decided;
+      blockWarn.appendChild(el("span", "msg",
+        "S3 还有 " + left + " 条阻断未裁决，先到第三步逐条批准或拒绝"));
+      var link = el("a", "chat-link ghost", "去第三步裁决");
+      link.href = "/s3.html";
+      blockWarn.appendChild(link);
+      blockWarn.classList.remove("hidden");
+    } else {
+      blockWarn.classList.add("hidden");
+    }
+  }
+
+  function renderHistory() {
+    historyList.textContent = "";
+    if (!allRuns.length) {
+      historyList.appendChild(el("p", "empty-note", "还没有可修纪要的运行，先去第三步对账。"));
+      return;
+    }
+    allRuns.forEach(function (run) {
+      var btn = el("button", "runitem");
+      btn.type = "button";
+      btn.appendChild(el("span", "run-tag", run.run_id));
+      btn.appendChild(el("span", "run-state", run.period || ""));
+      var label = run.has_corrected ? "已修" : "未修";
+      btn.appendChild(el("span", "tag " + (run.has_corrected ? "have" : "extra"), label));
+      btn.addEventListener("click", function () {
+        runSelect.value = run.run_id;
+        onSelect();
+      });
+      historyList.appendChild(btn);
+    });
+  }
+
+  function loadRuns(selectId) {
+    fetch("/api/s4/runs")
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        allRuns = data.runs || [];
+        runSelect.textContent = "";
+        if (!allRuns.length) {
+          var opt = el("option", "", "没有可修纪要的运行");
+          opt.value = "";
+          runSelect.appendChild(opt);
+          current = null;
+          fillMeta(null);
+          renderGate(null);
+          updateActions();
+          showPlaceholder();
+          renderHistory();
+          return;
+        }
+        allRuns.forEach(function (run) {
+          var option = el("option", "", run.run_id + " · " + (run.period || "") + " · " + (run.cards || 0) + " 张卡");
+          option.value = run.run_id;
+          runSelect.appendChild(option);
+        });
+        var target = selectId || (current && current.run_id) || allRuns[0].run_id;
+        if (!allRuns.some(function (run) { return run.run_id === target; })) {
+          target = allRuns[0].run_id;
+        }
+        runSelect.value = target;
+        onSelect();
+        renderHistory();
+      })
+      .catch(function (err) { showError("读取运行列表失败", err.message); });
+  }
+
+  function onSelect() {
+    var runId = runSelect.value;
+    current = allRuns.filter(function (item) { return item.run_id === runId; })[0] || null;
+    fillMeta(current);
+    renderGate(current);
+    updateActions();
+    clearError();
+    if (!current || !current.has_corrected) { showPlaceholder(); return; }
+    fetch("/api/s4/" + encodeURIComponent(current.run_id))
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (data.ok && data.corrected) {
+          var st = data.status || {};
+          render(data.corrected, st.state, st.note || st.message);
+        } else {
+          showPlaceholder();
+          if (data.error) showError("读取结果失败", data.error);
+        }
+      })
+      .catch(function () { showPlaceholder(); });
+  }
+
+  function showPlaceholder() {
+    resultBody.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+  }
+
+  function statusTag(status) {
+    var map = {
+      corrected: ["have", "已修正"],
+      kept: ["extra", "保留"],
+      future: ["core", "转未来"],
+      blocked: ["missing", "待处理"]
+    };
+    var item = map[status] || ["extra", status || "—"];
+    return el("span", "tag " + item[0], item[1]);
+  }
+
+  function render(corrected, state, message) {
+    placeholder.classList.add("hidden");
+    resultBody.classList.remove("hidden");
+
+    var stats = corrected.stats || {};
+    var blocked = stats.blocked || 0;
+    var bar = document.getElementById("stateBar");
+    bar.className = "statebar " + (blocked ? "stop" : "ok");
+    document.getElementById("stateBadge").textContent = blocked ? "待补充" : "可扩写";
+    document.getElementById("stateMsg").textContent = "只改纪要底稿，不写报告。";
+    document.getElementById("stateMeta").textContent =
+      [current ? current.run_id : "", corrected.week || ""].filter(Boolean).join(" · ");
+    document.getElementById("sCorrected").textContent = stats.corrected || 0;
+    document.getElementById("sBlocked").textContent = stats.blocked || 0;
+
+    var itemRows = document.getElementById("itemRows");
+    itemRows.textContent = "";
+    var items = corrected.items || [];
+    var fixItems = items.filter(function (item) { return item && item.status === "corrected"; });
+    var itemEmpty = document.getElementById("itemEmpty");
+    itemEmpty.style.display = fixItems.length ? "none" : "";
+    itemEmpty.textContent = fixItems.length ? "无" : "本次没有修正；S3 没有需要改写的句子。";
+    fixItems.forEach(function (item) {
+      var tr = el("tr");
+      var cardCell = el("td", "mono nowrap", item.card || item.id || "—");
+      if (item.card && item.id) cardCell.appendChild(el("span", "sub", item.id));
+      tr.appendChild(cardCell);
+      var statusCell = el("td", "nowrap");
+      statusCell.appendChild(statusTag(item.status));
+      tr.appendChild(statusCell);
+      tr.appendChild(el("td", "quote-cell", item.original || "—"));
+      tr.appendChild(el("td", "quote-cell", item.fixed || "—"));
+      tr.appendChild(el("td", "mono", item.basis || "—"));
+      tr.appendChild(el("td", "", item.issue || "—"));
+      var note = item.note || "";
+      if (item.confirmed === false) note = "未确认 · " + note;
+      tr.appendChild(el("td", "", note || "—"));
+      itemRows.appendChild(tr);
+    });
+    var blockedItems = items.filter(function (item) {
+      return item && item.status === "blocked";
+    });
+    var blockedBlock = document.getElementById("blockedBlock");
+    blockedBlock.classList.toggle("hidden", !blockedItems.length);
+    var blockedRows = document.getElementById("blockedRows");
+    blockedRows.textContent = "";
+    blockedItems.forEach(function (item) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "mono nowrap", item.id || "—"));
+      tr.appendChild(el("td", "quote-cell", item.original || "—"));
+      tr.appendChild(el("td", "", item.issue || "—"));
+      tr.appendChild(el("td", "", item.note || "—"));
+      blockedRows.appendChild(tr);
+    });
+
+    var cardBlock = document.getElementById("cardBlock");
+    var cards = corrected.cards || [];
+    cardBlock.classList.toggle("hidden", !cards.length);
+    var cardRows = document.getElementById("cardRows");
+    cardRows.textContent = "";
+    cards.forEach(function (item) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "mono nowrap", item.id || "—"));
+      tr.appendChild(el("td", "mono", item.issue || "—"));
+      tr.appendChild(el("td", "", item.question || "—"));
+      tr.appendChild(el("td", "", (item.options || []).join(" / ") || "—"));
+      tr.appendChild(el("td", "", item.suggest || "—"));
+      cardRows.appendChild(tr);
+    });
+
+    document.getElementById("rawJson").textContent = JSON.stringify(corrected, null, 2);
+  }
+
+  runBtn.addEventListener("click", function () {
+    if (!current || gateBlocked) return;
+    clearError();
+    setBusy(true);
+    fetch("/api/s4", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: current.run_id })
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) { return { status: resp.status, data: data }; });
+      })
+      .then(function (result) {
+        if (!result.data.ok) {
+          showError("修纪要失败", result.data.message || result.data.error || "");
+          return;
+        }
+        var corrected = result.data.corrected || {};
+        render(corrected, result.data.state, result.data.message);
+        current.has_corrected = true;
+        current.state = result.data.state;
+        fillMeta(current);
+        renderHistory();
+      })
+      .catch(function (err) { showError("请求失败", err.message); })
+      .finally(function () { setBusy(false); });
+  });
+
+  reloadBtn.addEventListener("click", function () { loadRuns(runSelect.value); });
+  runSelect.addEventListener("change", onSelect);
+
+  document.getElementById("copyBtn").addEventListener("click", function () {
+    var text = document.getElementById("rawJson").textContent;
+    if (navigator.clipboard) navigator.clipboard.writeText(text);
+  });
+
+  fetch("/api/llm")
+    .then(function (resp) { return resp.json(); })
+    .then(function (data) {
+      document.getElementById("modelName").textContent = data.model || "未配置";
+      if (data.configured) {
+        document.getElementById("modelDot").className = "dot ok";
+        document.getElementById("modelNote").textContent =
+          "只看有阻断或提示的句子，没问题的句子原样保留；改完的底稿交给 S5 扩写。";
+      } else {
+        document.getElementById("modelDot").className = "dot bad";
+        document.getElementById("modelNote").textContent =
+          "未找到 GLM_API_KEY，S4 需要模型改句；请先配置后再跑。";
+      }
+    })
+    .catch(function () {});
+
+  var initialRun = "";
+  try {
+    initialRun = new URLSearchParams(window.location.search).get("run") || "";
+  } catch (e) {}
+  loadRuns(initialRun);
+})();
+</script>
+</body>
+</html>

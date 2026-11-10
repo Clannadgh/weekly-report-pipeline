@@ -41,3 +41,40 @@ def make_qa(frames: dict, cache_dir: Any = None, max_retries: int = 2) -> Any:
 
     return DataQA(frames, llm=make_llm(), cache_dir=cache_dir,
                   max_retries=max(1, int(max_retries)))
+
+
+def make_chart_agent(frame, save_charts_path, *, max_retries: int = 1, llm=None):
+    """为单张图创建一个独立的 pandasai Agent。
+
+    与 DataQA 分开：图表 Agent 不写 DataQA 缓存、不共享会话记忆，
+    save_charts=True 只负责把本次 plot 落到本图目录。
+    """
+    import sys
+    from pathlib import Path
+
+    from pandasai import Agent  # type: ignore
+
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+    target = Path(save_charts_path).resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    llm = llm or make_llm()
+    # GLM 的 thinking 会吃掉默认 1000 token，导致 content 为空；给图代码留足预算
+    try:
+        llm.max_tokens = max(int(getattr(llm, "max_tokens", 0) or 0), 4096)
+    except Exception:  # noqa: BLE001 - 个别 LLM 包装只读
+        pass
+    config = {
+        "llm": llm,
+        "enable_cache": False,
+        "save_charts": True,
+        "save_charts_path": str(target),
+        "open_charts": False,
+        "verbose": False,
+        "save_logs": False,
+        "data_viz_library": "matplotlib",
+        "max_retries": max(1, int(max_retries)),
+    }
+    return Agent([frame], config=config)

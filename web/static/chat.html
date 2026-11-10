@@ -52,19 +52,6 @@
 /* ---------- 左侧流水线 ---------- */
 .pipeline-side{padding:26px 0 0;min-width:0;align-self:start}
 .pipeline-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px 2px;font-size:11px;letter-spacing:.08em;color:var(--muted)}
-.pipeline-approve-all{
-  margin:0;padding:2px 8px;border:1px solid #c3d8f2;border-radius:999px;
-  background:#eef3fb;color:var(--accent);font:inherit;font-size:10.5px;
-  letter-spacing:0;cursor:pointer;
-}
-.pipeline-approve-all:hover{background:#e3ecfa;border-color:var(--accent)}
-.pipeline-approve{
-  margin-top:5px;padding:2px 8px;border:1px solid #c3d8f2;border-radius:999px;
-  background:#eef3fb;color:var(--accent);font:inherit;font-size:11px;cursor:pointer;
-}
-.pipeline-approve:hover{background:#e3ecfa;border-color:var(--accent)}
-.pipeline-approve:disabled{opacity:.55;cursor:not-allowed}
-.pipeline-approved{display:inline-block;margin-top:5px;font-size:11px;font-weight:600;color:var(--ok)}
 .pipeline-list{list-style:none;margin:0;padding:0;position:relative}
 .pipeline-list::before{content:"";position:absolute;left:8px;top:8px;bottom:8px;width:1px;background:var(--line)}
 .pipeline-node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:0 0 22px}
@@ -400,6 +387,7 @@ body.drawer-open{overflow:hidden}
   display:inline-block;padding:1px 9px;border-radius:999px;
   background:var(--ink);color:#fff;font-size:11.5px;line-height:19px;white-space:nowrap;
 }
+.d-state-badge.muted{background:var(--muted)}
 .detail-state.ok .d-state-badge{background:var(--ok)}
 .detail-state.warn .d-state-badge{background:var(--warn)}
 .detail-state.stop .d-state-badge{background:var(--danger)}
@@ -424,10 +412,60 @@ body.drawer-open{overflow:hidden}
 .d-tag.warn{background:var(--warn-soft);color:var(--warn)}
 .d-tag.stop{background:var(--danger-soft);color:var(--danger)}
 
-.s2-detail-dialog,.s3-detail-dialog{max-width:1040px}
+.s3-approve{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted)}
+.s3-approve-hint{flex:1;min-width:180px;font-size:11.5px;line-height:1.55;color:var(--muted)}
+.s3-approve .btn{flex:none}
+.s3-decide{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px}
+.s3-decide-btn{
+  margin:0;padding:1px 9px;border:1px solid var(--line-strong);border-radius:999px;
+  background:var(--surface);color:var(--ink-2);font:inherit;font-size:11px;cursor:pointer;
+  transition:background-color .16s var(--ease),border-color .16s var(--ease),color .16s var(--ease);
+}
+.s3-decide-btn:hover{border-color:var(--accent);color:var(--accent)}
+.s3-decide-btn.accept.on{border-color:#bfe0c9;background:var(--ok-soft);color:var(--ok)}
+.s3-decide-btn.reject.on{border-color:var(--line-strong);background:var(--surface-muted);color:var(--ink)}
+.s3-decide-note{font-size:11px;line-height:1.5;color:var(--muted)}
+.s3-error{color:var(--danger)}
+
+.s2-detail-dialog,.s3-detail-dialog,.s4-detail-dialog,.s5-detail-dialog{max-width:1100px}
 .s2-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
-.s2-stat{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted)}
-.s2-stat .k{font-size:11px;color:var(--muted)}
+.s4-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}
+.s5-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+.s5-draft{font-size:12.5px;line-height:1.8;color:var(--ink-2)}
+.s5-draft h3{margin:14px 0 6px;font-size:15px;color:var(--ink)}
+.s5-draft h4{margin:12px 0 5px;font-size:13.5px;color:var(--ink)}
+.s5-draft p{margin:0 0 8px}
+.s5-draft table{width:100%;border-collapse:collapse;margin:6px 0 10px;font-size:11.5px}
+.s5-draft th,.s5-draft td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.s5-draft th{background:var(--surface-muted);font-weight:600;color:var(--ink)}
+.s5-token{padding:0 3px;border-radius:3px;background:var(--surface-muted);color:var(--accent);font-size:11px}
+.s5-linetag{display:inline-block;margin-right:5px;padding:0 6px;border-radius:999px;font-size:10.5px;line-height:18px;font-weight:600;vertical-align:1px}
+.s5-linetag.skeleton{background:var(--surface-muted);color:var(--accent);border:1px solid var(--line)}
+.s5-linetag.supp{background:var(--warn-soft);color:var(--warn);border:1px solid #f0dca4}
+.s5-legend{margin:8px 0;font-size:12px;line-height:2;color:var(--muted)}
+.s5-disc{width:100%;border-collapse:collapse;margin:6px 0;font-size:11.5px}
+.s5-disc th,.s5-disc td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.s5-disc th{background:var(--surface-muted);font-weight:600;color:var(--ink)}
+.s5-disc tbody tr.disc-row{cursor:pointer}
+.s5-disc tbody tr.disc-row:hover{background:var(--surface-muted)}
+.disc-caret{display:inline-block;width:12px;color:var(--muted);transition:transform .12s}
+tr.disc-row.open .disc-caret{transform:rotate(90deg)}
+.s5-disc tr.disc-code-row td{padding:0 6px 10px;background:var(--surface-muted)}
+.disc-code{margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;white-space:pre;overflow:auto;max-height:420px;font-family:Consolas,"Courier New",monospace;font-size:11.5px;line-height:1.55;color:var(--ink)}
+.disc-code-note{padding:8px 2px;font-size:11.5px;color:var(--muted)}
+.s5-figs{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px;margin:8px 0}
+.s5-fig{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px}
+.s5-fig img{display:block;width:auto;height:auto;max-width:100%;max-height:320px;margin:0 auto;border-radius:6px;background:#fff}
+.s5-fig .cap{margin-top:8px;font-size:12px;line-height:1.6;color:var(--muted)}
+.s5-engine{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:999px;background:#eef4ff;color:#2f5fa8;font-size:10.5px}
+.s5-history{margin-top:14px}
+.s5-history summary{cursor:pointer;font-weight:700;font-size:13.5px}
+.s5-history-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.s5-history-item{text-align:left;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:7px 10px;font-family:inherit;font-size:12px;color:var(--text);cursor:pointer}
+.s5-history-item:hover{background:var(--surface-muted)}
+.s5-history-draft{margin:8px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-muted);white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.65;max-height:320px;overflow:auto}
+.s5-fig .fig-missing{display:flex;align-items:center;justify-content:center;min-height:150px;border:1px dashed var(--line);border-radius:6px;background:var(--surface-muted);color:var(--muted);font-size:12.5px;text-align:center;padding:12px}
+.s2-stat{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted)}.s2-stat .k{font-size:11px;color:var(--muted)}
 .s2-stat .v{margin-top:2px;font-size:20px;font-weight:600;line-height:1.25;color:var(--ink)}
 .s2-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
 .s2-table{border-collapse:collapse;width:100%;min-width:760px;font-size:12px}
@@ -458,8 +496,6 @@ body.drawer-open{overflow:hidden}
   .pipeline-name{font-size:11.5px}
   .pipeline-meta{display:none}
   .pipeline-override{margin:0 0 0 2px;padding:1px 6px;font-size:10.5px}
-  .pipeline-approve{margin:0 0 0 2px;padding:1px 6px;font-size:10.5px}
-  .pipeline-approved{margin:0 0 0 2px;font-size:10.5px}
   .chat-main{flex:1;min-height:0}
 }
 
@@ -528,10 +564,7 @@ body.drawer-open{overflow:hidden}
 
 <main class="app">
   <aside class="pipeline-side" aria-label="流水线进度">
-    <div class="pipeline-head">
-      <span>流水线</span>
-      <button class="pipeline-approve-all" id="approveAllBtn" type="button" hidden>全部批准</button>
-    </div>
+    <div class="pipeline-head">流水线</div>
     <ol class="pipeline-list" id="pipelineList"></ol>
   </aside>
 
@@ -574,7 +607,7 @@ body.drawer-open{overflow:hidden}
         <span class="prompt-text"><span class="prompt-title">出本周经营周报</span><span class="prompt-desc">全公司 + 四个区域</span></span>
       </div>
       <div class="prompt-card">
-        <span class="prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.3 7-11a7 7 0 1 0-14 0c0 5.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+        <span class="prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6-5.3 7-11a7 7 0 1 0-14 0c0 5.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
         <span class="prompt-text"><span class="prompt-title">看区域达成</span><span class="prompt-desc">本周与上周的差异</span></span>
       </div>
       <div class="prompt-card">
@@ -652,7 +685,38 @@ body.drawer-open{overflow:hidden}
       </button>
     </header>
     <div class="detail-body" id="s3DetailBody">正在读取…</div>
-    <footer class="detail-foot" id="s3DetailFoot" hidden></footer>
+  </section>
+</dialog>
+
+<dialog class="detail-dialog s4-detail-dialog" id="s4DetailDialog" aria-labelledby="s4DetailTitle">
+  <section class="detail-card">
+    <header class="detail-head">
+      <div>
+        <div class="detail-kicker">S4 修纪要</div>
+        <h2 id="s4DetailTitle">修稿详情</h2>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-square" id="s4DetailClose" type="button" aria-label="关闭修稿详情">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="detail-body" id="s4DetailBody">正在读取…</div>
+    <footer class="detail-foot" id="s4DetailFoot" hidden></footer>
+  </section>
+</dialog>
+
+<dialog class="detail-dialog s5-detail-dialog" id="s5DetailDialog" aria-labelledby="s5DetailTitle">
+  <section class="detail-card">
+    <header class="detail-head">
+      <div>
+        <div class="detail-kicker">S5 扩写</div>
+        <h2 id="s5DetailTitle">正文详情</h2>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-square" id="s5DetailClose" type="button" aria-label="关闭正文详情">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="detail-body" id="s5DetailBody">正在读取…</div>
+    <footer class="detail-foot" id="s5DetailFoot" hidden></footer>
   </section>
 </dialog>
 
@@ -670,7 +734,6 @@ body.drawer-open{overflow:hidden}
   var bound = document.getElementById("bound");
   var messages = document.getElementById("messages");
   var pipelineList = document.getElementById("pipelineList");
-  var approveAllBtn = document.getElementById("approveAllBtn");
   var welcomeTpl = document.getElementById("welcomeTpl");
   var welcome = null;
   var input = document.getElementById("input");
@@ -699,14 +762,25 @@ body.drawer-open{overflow:hidden}
   var s3DetailDialog = document.getElementById("s3DetailDialog");
   var s3DetailTitle = document.getElementById("s3DetailTitle");
   var s3DetailBody = document.getElementById("s3DetailBody");
-  var s3DetailFoot = document.getElementById("s3DetailFoot");
   var s3DetailClose = document.getElementById("s3DetailClose");
+  var s3View = null;
+  var s4DetailDialog = document.getElementById("s4DetailDialog");
+  var s4DetailTitle = document.getElementById("s4DetailTitle");
+  var s4DetailBody = document.getElementById("s4DetailBody");
+  var s4DetailFoot = document.getElementById("s4DetailFoot");
+  var s4DetailClose = document.getElementById("s4DetailClose");
+  var s5DetailDialog = document.getElementById("s5DetailDialog");
+  var s5DetailTitle = document.getElementById("s5DetailTitle");
+  var s5DetailBody = document.getElementById("s5DetailBody");
+  var s5DetailFoot = document.getElementById("s5DetailFoot");
+  var s5DetailClose = document.getElementById("s5DetailClose");
+  var s5PollTimer = null;
 
   var LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 17v-4.5M12 17V7M17 17v-7"/></svg>';
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>';
   var WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 17.5A1.8 1.8 0 0 0 4 20.2h16a1.8 1.8 0 0 0 1.6-2.7L13.7 3.9a1.9 1.9 0 0 0-3.4 0Z"/></svg>';
   var CHEVRON = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
-  var TOOL_LABELS = { run_s1: "S1 准入", run_s2: "S2 拆卡", run_s3: "S3 对账" };
+  var TOOL_LABELS = { run_s1: "S1 准入", run_s2: "S2 拆卡", run_s3: "S3 对账", run_s4: "S4 修纪要", run_s5: "S5 扩写审核", run_s6: "S6 交付" };
   var FILE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>';
   var TRASH = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13M10 11v6M14 11v6"/></svg>';
 
@@ -723,15 +797,18 @@ body.drawer-open{overflow:hidden}
     bound.hidden = !text;
   }
 
-  var pipeline = { s1: null, s2: null, s3: null };
+  var pipeline = { s1: null, s2: null, s3: null, s4: null, s5: null, s6: null };
   var PIPELINE_STAGES = [
     { key: "s1", label: "S1 准入" },
     { key: "s2", label: "S2 拆卡" },
-    { key: "s3", label: "S3 对账" }
+    { key: "s3", label: "S3 对账" },
+    { key: "s4", label: "S4 修纪要" },
+    { key: "s5", label: "S5 扩写审核" },
+    { key: "s6", label: "S6 交付" }
   ];
 
   function emptyPipeline() {
-    return { s1: null, s2: null, s3: null };
+    return { s1: null, s2: null, s3: null, s4: null, s5: null, s6: null };
   }
 
   function pipelineKey() {
@@ -750,6 +827,9 @@ body.drawer-open{overflow:hidden}
         pipeline.s1 = data.s1 || null;
         pipeline.s2 = data.s2 || null;
         pipeline.s3 = data.s3 || null;
+        pipeline.s4 = data.s4 || null;
+        pipeline.s5 = data.s5 || null;
+        pipeline.s6 = data.s6 || null;
       }
     } catch (e) {}
   }
@@ -767,17 +847,9 @@ body.drawer-open{overflow:hidden}
     return state || "已运行";
   }
 
-  function stageCanApprove(key, data) {
-    if (!data || !data.run) return false;
-    if (key === "s3") return true;
-    return stateTone(data.state) === "ok";
-  }
-
   function renderPipeline() {
     if (!pipelineList) return;
     pipelineList.textContent = "";
-    var anyApprove = false;
-    var latestRun = "";
     PIPELINE_STAGES.forEach(function (stage) {
       var data = pipeline[stage.key];
       var tone = data ? stateTone(data.state) : "neutral";
@@ -792,11 +864,11 @@ body.drawer-open{overflow:hidden}
         li.setAttribute("role", "button");
         li.setAttribute("tabindex", "0");
         li.addEventListener("click", function (event) {
-          if (event.target.closest(".pipeline-override,.pipeline-approve")) return;
+          if (event.target.closest(".pipeline-override")) return;
           openRunDetail(data.run);
         });
         li.addEventListener("keydown", function (event) {
-          if (event.target.closest(".pipeline-override,.pipeline-approve")) return;
+          if (event.target.closest(".pipeline-override")) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openRunDetail(data.run);
@@ -821,7 +893,6 @@ body.drawer-open{overflow:hidden}
         var openStage = function () { openS2Detail(data.run); };
         li.addEventListener("click", openStage);
         li.addEventListener("keydown", function (event) {
-          if (event.target.closest(".pipeline-approve")) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openStage();
@@ -836,36 +907,68 @@ body.drawer-open{overflow:hidden}
         var openS3 = function () { openS3Detail(data.run); };
         li.addEventListener("click", openS3);
         li.addEventListener("keydown", function (event) {
-          if (event.target.closest(".pipeline-approve")) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openS3();
           }
         });
       }
-      if (data && data.run) latestRun = data.run;
-      if (stageCanApprove(stage.key, data)) {
-        if (data.approved) {
-          text.appendChild(el("span", "pipeline-approved", "已批准"));
-        } else {
-          anyApprove = true;
-          var approveBtn = el("button", "pipeline-approve", "批准");
-          approveBtn.type = "button";
-          approveBtn.title = "批准 " + stage.label;
-          approveBtn.addEventListener("click", function (event) {
-            event.stopPropagation();
-            approveStage(data.run, stage.key, approveBtn);
-          });
-          text.appendChild(approveBtn);
-        }
+      var s4Run = (data && data.run) || (pipeline.s3 && pipeline.s3.run) || "";
+      if (stage.key === "s4" && s4Run) {
+        li.classList.add("clickable");
+        li.setAttribute("role", "button");
+        li.setAttribute("tabindex", "0");
+        li.setAttribute("aria-label", "查看 S4 修纪要");
+        var openS4 = function () {
+          openS4Detail(s4Run);
+        };
+        li.addEventListener("click", openS4);
+        li.addEventListener("keydown", function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openS4();
+          }
+        });
+      }
+      var s5Run = (data && data.run) || (pipeline.s4 && pipeline.s4.run)
+        || (pipeline.s3 && pipeline.s3.run) || "";
+      if (stage.key === "s5" && s5Run) {
+        li.classList.add("clickable");
+        li.setAttribute("role", "button");
+        li.setAttribute("tabindex", "0");
+        li.setAttribute("aria-label", "查看 S5 扩写");
+        var openS5 = function () {
+          openS5Detail(s5Run);
+        };
+        li.addEventListener("click", openS5);
+        li.addEventListener("keydown", function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openS5();
+          }
+        });
+      }
+      var s6Run = (data && data.run) || (pipeline.s5 && pipeline.s5.run)
+        || (pipeline.s4 && pipeline.s4.run) || "";
+      if (stage.key === "s6" && s6Run) {
+        li.classList.add("clickable");
+        li.setAttribute("role", "button");
+        li.setAttribute("tabindex", "0");
+        li.setAttribute("aria-label", "查看 S6 交付");
+        var openS6 = function () {
+          window.open("/s6.html?run=" + encodeURIComponent(s6Run), "_blank");
+        };
+        li.addEventListener("click", openS6);
+        li.addEventListener("keydown", function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openS6();
+          }
+        });
       }
       li.appendChild(text);
       pipelineList.appendChild(li);
     });
-    if (approveAllBtn) {
-      approveAllBtn.hidden = !anyApprove;
-      approveAllBtn.dataset.run = latestRun;
-    }
   }
 
   function setPipelineStage(key, data) {
@@ -877,92 +980,41 @@ body.drawer-open{overflow:hidden}
   function updatePipelineFromEvents(events) {
     if (!events || !events.length) return;
     var changed = false;
-    var latestRun = "";
     events.forEach(function (ev) {
-      var key = ev.tool === "run_s1" ? "s1" : (ev.tool === "run_s2" ? "s2" : (ev.tool === "run_s3" ? "s3" : ""));
+      var key = ev.tool === "run_s1" ? "s1"
+        : (ev.tool === "run_s2" ? "s2"
+        : (ev.tool === "run_s3" ? "s3"
+        : (ev.tool === "run_s4" ? "s4"
+        : (ev.tool === "run_s5" ? "s5"
+        : (ev.tool === "run_s6" ? "s6" : "")))));
       if (!key) return;
       if (key === "s1") {
         pipeline.s2 = null;
         pipeline.s3 = null;
+        pipeline.s4 = null;
+        pipeline.s5 = null;
+        pipeline.s6 = null;
       } else if (key === "s2") {
         pipeline.s3 = null;
+        pipeline.s4 = null;
+        pipeline.s5 = null;
+        pipeline.s6 = null;
+      } else if (key === "s3") {
+        pipeline.s4 = null;
+        pipeline.s5 = null;
+        pipeline.s6 = null;
+      } else if (key === "s4") {
+        pipeline.s5 = null;
+        pipeline.s6 = null;
+      } else if (key === "s5") {
+        pipeline.s6 = null;
       }
-      pipeline[key] = { state: ev.state || "", run: ev.run_id || "", ok: !!ev.ok, approved: false };
-      if (ev.run_id) latestRun = ev.run_id;
+      pipeline[key] = { state: ev.state || "", run: ev.run_id || "", ok: !!ev.ok };
       changed = true;
     });
     if (changed) {
       savePipeline();
       renderPipeline();
-      if (latestRun) refreshApprovals(latestRun);
-    }
-  }
-
-  function applyApprovals(runId, approvals) {
-    if (!runId) return;
-    PIPELINE_STAGES.forEach(function (stage) {
-      var data = pipeline[stage.key];
-      if (data && data.run === runId) {
-        data.approved = !!(approvals && approvals[stage.key] && approvals[stage.key].approved);
-      }
-    });
-    savePipeline();
-    renderPipeline();
-  }
-
-  async function refreshApprovals(runId) {
-    if (!runId) return;
-    try {
-      var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approvals");
-      var data = await resp.json();
-      if (data.ok) applyApprovals(runId, data.approvals || {});
-    } catch (e) {}
-  }
-
-  async function approveStage(runId, stage, btn) {
-    if (!runId) return;
-    btn.disabled = true;
-    btn.textContent = "批准中…";
-    try {
-      var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage: stage, session_id: sessionId || "" })
-      });
-      var data = await resp.json();
-      if (!data.ok) throw new Error(data.error || "批准失败");
-      applyApprovals(runId, data.approvals || {});
-      if (data.note) appendMessage("assistant", data.note);
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = "批准";
-      appendMessage("error", "批准失败：" + (err.message || err));
-    }
-  }
-
-  async function approveAllStages(runId, btn) {
-    if (!runId) return;
-    var stages = PIPELINE_STAGES.filter(function (stage) {
-      var data = pipeline[stage.key];
-      return data && data.run === runId && stageCanApprove(stage.key, data) && !data.approved;
-    }).map(function (stage) { return stage.key; });
-    if (!stages.length) return;
-    btn.disabled = true;
-    btn.textContent = "批准中…";
-    try {
-      var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stages: stages, session_id: sessionId || "" })
-      });
-      var data = await resp.json();
-      if (!data.ok) throw new Error(data.error || "批准失败");
-      applyApprovals(runId, data.approvals || {});
-      if (data.note) appendMessage("assistant", data.note);
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = "全部批准";
-      appendMessage("error", "批准失败：" + (err.message || err));
     }
   }
 
@@ -1170,9 +1222,11 @@ body.drawer-open{overflow:hidden}
 
   function stateTone(state) {
     var s = String(state || "").trim();
-    if (s === "准入通过" || s === "ok" || s === "done") return "ok";
-    if (s === "待补充" || s === "warn" || s === "degrade") return "warn";
-    if (s === "暂停" || s === "failed" || s === "error") return "stop";
+    if (s === "准入通过" || s === "可扩写" || s === "已生成" || s === "已通过"
+        || s === "已交付" || s === "ok" || s === "done") return "ok";
+    if (s === "待补充" || s === "扩写中" || s === "待审核"
+        || s === "warn" || s === "degrade") return "warn";
+    if (s === "暂停" || s === "退回修改" || s === "blocked" || s === "failed" || s === "error") return "stop";
     return "neutral";
   }
 
@@ -1512,12 +1566,11 @@ body.drawer-open{overflow:hidden}
     return "";
   }
 
-  function renderS3Detail(issues, ledger, approval, runId) {
+  function renderS3Detail(issues, ledger, approval, runId, quotes) {
+    quotes = quotes || {};
     var body = s3DetailBody;
     body.textContent = "";
     body.scrollTop = 0;
-    s3DetailFoot.textContent = "";
-    s3DetailFoot.hidden = true;
     var state = String(issues.state || "");
     var stats = issues.stats || {};
     var bar = el("div", "detail-state " + s3Tone(state));
@@ -1577,8 +1630,11 @@ body.drawer-open{overflow:hidden}
       }
     });
 
+    var blockingIds = s3BlockingIds(issues);
+
     if (rows.length) {
       var issueSec = detailSection("核对清单");
+      if (blockingIds.length) issueSec.appendChild(s3ApproveBar(approval, blockingIds, runId));
       var issueUl = el("ul", "detail-list");
       rows.forEach(function (row) {
         var issue = row.issue;
@@ -1591,8 +1647,10 @@ body.drawer-open{overflow:hidden}
         li.appendChild(document.createTextNode(
           (issue && issue.subject) || (result && result.subject) || ""
         ));
-        if (issue && issue.minutes_said) {
-          li.appendChild(el("div", "detail-sub", "纪要：" + issue.minutes_said));
+        var quote = (issue && issue.minutes_said) || quotes[row.card] || "";
+        if (quote) {
+          li.appendChild(el("div", "detail-sub",
+            (issue && issue.minutes_said ? "纪要：" : "原句：") + quote));
         }
         var rawValue = (issue && issue.raw) || (result && result.raw) || "";
         if (rawValue) {
@@ -1611,6 +1669,9 @@ body.drawer-open{overflow:hidden}
         } else if (!issue) {
           li.appendChild(el("div", "detail-sub", "核对通过，未发现差异。"));
         }
+        if (issue && issue.level === "阻断") {
+          li.appendChild(s3DecisionBox(issue, approval, runId));
+        }
         issueUl.appendChild(li);
       });
       issueSec.appendChild(issueUl);
@@ -1618,51 +1679,154 @@ body.drawer-open{overflow:hidden}
     } else {
       body.appendChild(el("p", "detail-note", "没有核对结果。"));
     }
-
-    renderS3Approval(approval || {}, runId);
   }
 
-  function renderS3Approval(approval, runId) {
-    s3DetailFoot.textContent = "";
-    s3DetailFoot.hidden = true;
-    if (!runId) return;
-    if (approval && approval.approved) {
-      s3DetailFoot.appendChild(el("span", "d-tag ok", "已批准"));
-      var at = String(approval.at || "").replace("T", " ");
-      if (at) s3DetailFoot.appendChild(el("span", "detail-foot-hint", "批准时间：" + at));
-      s3DetailFoot.hidden = false;
+  function s3BlockingIds(issues) {
+    return ((issues && issues.issues) || []).filter(function (item) {
+      return item && item.level === "阻断" && item.id;
+    }).map(function (item) { return String(item.id); });
+  }
+
+  function s3Decision(approval, issueId) {
+    var decisions = (approval && approval.decisions) || {};
+    return decisions[issueId] || null;
+  }
+
+  function s3Tally(approval, blockingIds) {
+    var counts = { accepted: 0, rejected: 0, pending: 0, total: blockingIds.length };
+    blockingIds.forEach(function (id) {
+      var item = s3Decision(approval, id);
+      if (!item) counts.pending += 1;
+      else if (item.decision === "reject") counts.rejected += 1;
+      else counts.accepted += 1;
+    });
+    return counts;
+  }
+
+  function s3ApproveBar(approval, blockingIds, runId) {
+    var bar = el("div", "s3-approve");
+    fillS3ApproveBar(bar, approval, blockingIds, runId);
+    return bar;
+  }
+
+  function fillS3ApproveBar(bar, approval, blockingIds, runId) {
+    bar.textContent = "";
+    if (!blockingIds.length) {
+      bar.remove();
       return;
     }
-    s3DetailFoot.appendChild(el("span", "detail-foot-hint",
-      "S3 结果需要你确认；批准后才能进入下一步。"));
-    var btn = el("button", "btn btn-primary btn-sm", "批准本次对账");
+    var counts = s3Tally(approval, blockingIds);
+    if (!counts.pending) {
+      bar.appendChild(el("span", "d-tag ok", "阻断已处理"));
+      bar.appendChild(el("span", "s3-approve-hint",
+        "已批准 " + counts.accepted + " 条、已拒绝 " + counts.rejected + " 条。"));
+      return;
+    }
+    var handled = counts.accepted + counts.rejected;
+    bar.appendChild(el("span", "d-tag stop", "阻断 " + counts.total + " 条"));
+    bar.appendChild(el("span", "s3-approve-hint",
+      handled
+        ? "已处理 " + handled + " 条，还剩 " + counts.pending + " 条。逐条批准或拒绝，或点"
+        : "逐条批准或拒绝，或点"));
+    var btn = el("button", "btn btn-primary btn-sm", "全部批准");
     btn.type = "button";
-    btn.addEventListener("click", function () { approveS3(runId, btn); });
-    s3DetailFoot.appendChild(btn);
-    s3DetailFoot.hidden = false;
+    btn.addEventListener("click", function () {
+      approveAllBlocking(runId, bar, btn);
+    });
+    bar.appendChild(btn);
   }
 
-  async function approveS3(runId, btn) {
+  function s3DecisionBox(issue, approval, runId) {
+    var box = el("div", "s3-decide");
+    var current = s3Decision(approval, issue.id);
+    [["accept", "批准"], ["reject", "拒绝"]].forEach(function (pair) {
+      var action = pair[0];
+      var btn = el("button",
+        "s3-decide-btn " + action + (current && current.decision === action ? " on" : ""),
+        pair[1]);
+      btn.type = "button";
+      btn.addEventListener("click", function () {
+        submitS3Decision(runId, issue.id, action);
+      });
+      box.appendChild(btn);
+    });
+    if (current) {
+      var at = String(current.at || "").replace("T", " ").slice(0, 16);
+      box.appendChild(el("span", "s3-decide-note",
+        (current.decision === "reject" ? "已拒绝" : "已批准") + (at ? " · " + at : "")));
+    } else {
+      box.appendChild(el("span", "s3-decide-note", "是否采纳这条建议？"));
+    }
+    return box;
+  }
+
+  function applyS3Approval(data) {
+    if (!s3View) return;
+    s3View.approval = (data && data.approval)
+      || (data && data.approvals && data.approvals.s3)
+      || {};
+    var top = s3DetailBody.scrollTop;
+    renderS3Detail(s3View.issues, s3View.ledger, s3View.approval, s3View.runId, s3View.quotes);
+    s3DetailBody.scrollTop = top;
+    if (data && data.note) appendMessage("assistant", data.note);
+  }
+
+  function showS3Error(text) {
+    var old = s3DetailBody.querySelector(".s3-error");
+    if (old) old.remove();
+    s3DetailBody.insertBefore(el("p", "detail-note s3-error", text), s3DetailBody.firstChild);
+    s3DetailBody.scrollTop = 0;
+  }
+
+  async function submitS3Decision(runId, issueId, action) {
+    if (!runId) return;
+    try {
+      var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stage: "s3", issue_id: issueId, action: action, session_id: sessionId || ""
+        })
+      });
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.error || "记录失败");
+      applyS3Approval(data);
+    } catch (err) {
+      showS3Error("记录失败：" + (err.message || err));
+    }
+  }
+
+  async function approveAllBlocking(runId, bar, btn) {
+    if (!runId) return;
     btn.disabled = true;
     btn.textContent = "批准中…";
     try {
       var resp = await fetch("/api/runs/" + encodeURIComponent(runId) + "/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage: "s3", session_id: sessionId || "" })
+        body: JSON.stringify({ stage: "s3", action: "accept", session_id: sessionId || "" })
       });
       var data = await resp.json();
       if (!data.ok) throw new Error(data.error || "批准失败");
-      applyApprovals(runId, data.approvals || { s3: data.approval || { approved: true } });
-      renderS3Approval(data.approval || { approved: true }, runId);
-      if (data.note) appendMessage("assistant", data.note);
+      applyS3Approval(data);
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = "批准本次对账";
-      s3DetailFoot.insertBefore(
-        el("span", "detail-foot-hint", "批准失败：" + (err.message || err)),
-        s3DetailFoot.firstChild
-      );
+      btn.textContent = "全部批准";
+      showS3Error("批准失败：" + (err.message || err));
+    }
+  }
+
+  async function s3CardQuotes(runId) {
+    try {
+      var resp = await fetch("/api/s2/" + encodeURIComponent(runId));
+      var data = await resp.json();
+      var map = {};
+      ((data.cards && data.cards.cards) || []).forEach(function (card) {
+        if (card && card.id) map[card.id] = card.quote || "";
+      });
+      return map;
+    } catch (err) {
+      return {};
     }
   }
 
@@ -1677,10 +1841,769 @@ body.drawer-open{overflow:hidden}
       if (!data.ok || !data.issues || !Object.keys(data.issues).length) {
         throw new Error(data.error || "没有这次对账结果");
       }
-      applyApprovals(runId, data.approvals || { s3: data.approval || {} });
-      renderS3Detail(data.issues, data.ledger || {}, data.approval || {}, runId);
+      var quotes = await s3CardQuotes(runId);
+      s3View = { issues: data.issues, ledger: data.ledger || {},
+                approval: data.approval || {}, runId: runId, quotes: quotes };
+      renderS3Detail(s3View.issues, s3View.ledger, s3View.approval, s3View.runId, s3View.quotes);
     } catch (err) {
       s3DetailBody.textContent = "读取失败：" + (err.message || err);
+    }
+  }
+
+  function s4StateTone(state) {
+    if (state === "可扩写") return "ok";
+    if (state === "待补充") return "stop";
+    return "warn";
+  }
+
+  function s4StatusTag(status) {
+    var map = {
+      corrected: ["ok", "已修正"],
+      kept: ["", "保留"],
+      future: ["warn", "转未来"],
+      blocked: ["stop", "待处理"]
+    };
+    var item = map[status] || ["", status || "—"];
+    return el("span", "d-tag" + (item[0] ? " " + item[0] : ""), item[1]);
+  }
+
+  function s4Error(text) {
+    var old = s4DetailBody.querySelector(".s4-error");
+    if (old) old.remove();
+    s4DetailBody.insertBefore(el("p", "detail-note s4-error", text), s4DetailBody.firstChild);
+    s4DetailBody.scrollTop = 0;
+  }
+
+  function renderS4Detail(corrected, status, runId) {
+    var body = s4DetailBody;
+    body.textContent = "";
+    body.scrollTop = 0;
+    s4DetailFoot.textContent = "";
+    s4DetailFoot.hidden = true;
+    var state = String((status && status.state) || "");
+    var stats = corrected.stats || {};
+    var summary = "只改纪要底稿，不写报告。";
+    var bar = el("div", "detail-state " + s4StateTone(state));
+    bar.appendChild(el("span", "d-state-badge", state || "未知"));
+    bar.appendChild(el("span", "detail-state-msg", summary));
+    body.appendChild(bar);
+    var meta = [runId, corrected.week].filter(Boolean).join(" · ");
+    if (meta) body.appendChild(el("p", "detail-note", meta));
+
+    var grid = el("div", "s4-stats");
+    [["修正", stats.corrected || 0], ["待处理", stats.blocked || 0]].forEach(function (pair) {
+      var box = el("div", "s2-stat");
+      box.appendChild(el("div", "k", pair[0]));
+      box.appendChild(el("div", "v", String(pair[1])));
+      grid.appendChild(box);
+    });
+    body.appendChild(grid);
+
+    var items = corrected.items || [];
+    var fixItems = items.filter(function (item) { return item && item.status === "corrected"; });
+    var sec = detailSection("修正清单");
+    sec.appendChild(el("p", "detail-note",
+      "只列真正改过的句子；没有列出的句子按原文保留或转未来。"));
+    if (fixItems.length) {
+      var list = el("ul", "detail-list");
+      fixItems.forEach(function (item) {
+        var li = el("li");
+        li.appendChild(s4StatusTag(item.status));
+        li.appendChild(el("span", "d-tag", item.id || "—"));
+        if (item.confirmed === false) li.appendChild(el("span", "d-tag warn", "未确认"));
+        var main = item.status === "corrected"
+          ? (item.fixed || item.original || "")
+          : (item.original || item.fixed || "");
+        li.appendChild(el("div", "", (item.status === "corrected" ? "修正后：" : "原句：") + main));
+        if (item.status === "corrected" && item.original) {
+          li.appendChild(el("div", "detail-sub", "原句：" + item.original));
+        }
+        if (item.basis) li.appendChild(el("div", "detail-sub", "依据：" + item.basis));
+        if (item.issue) li.appendChild(el("div", "detail-sub", "问题：" + item.issue));
+        if (item.note) li.appendChild(el("div", "detail-sub", "说明：" + item.note));
+        list.appendChild(li);
+      });
+      sec.appendChild(list);
+    } else {
+      sec.appendChild(el("p", "detail-note", "本次没有修正；S3 没有需要改写的句子。"));
+    }
+    body.appendChild(sec);
+
+    var blockedItems = items.filter(function (item) {
+      return item && item.status === "blocked";
+    });
+    if (blockedItems.length) {
+      var blockSec = detailSection("待处理");
+      blockSec.appendChild(el("p", "detail-note",
+        "S4 没能自动改写这些句子，需要人工处理；处理前不能进入 S5。"));
+      var blockList = el("ul", "detail-list");
+      blockedItems.forEach(function (item) {
+        var li = el("li");
+        li.appendChild(s4StatusTag(item.status));
+        li.appendChild(el("span", "d-tag", item.id || "—"));
+        li.appendChild(el("div", "", "原句：" + (item.original || "")));
+        if (item.issue) li.appendChild(el("div", "detail-sub", "问题：" + item.issue));
+        if (item.note) li.appendChild(el("div", "detail-sub", "说明：" + item.note));
+        blockList.appendChild(li);
+      });
+      blockSec.appendChild(blockList);
+      body.appendChild(blockSec);
+    }
+
+    var cards = corrected.cards || [];
+    if (cards.length) {
+      var cardSec = detailSection("待裁决");
+      var cardList = el("ul", "detail-list");
+      cards.forEach(function (card) {
+        var li = el("li");
+        li.appendChild(el("span", "d-tag warn", card.id || "待裁决"));
+        if (card.issue) li.appendChild(el("span", "d-tag", card.issue));
+        li.appendChild(document.createTextNode(card.question || ""));
+        if ((card.options || []).length) {
+          li.appendChild(el("div", "detail-sub", "选项：" + card.options.join(" / ")));
+        }
+        if (card.suggest) li.appendChild(el("div", "detail-sub", "建议：" + card.suggest));
+        cardList.appendChild(li);
+      });
+      cardSec.appendChild(cardList);
+      body.appendChild(cardSec);
+    }
+
+    s4DetailFoot.appendChild(el("span", "detail-foot-hint",
+      "S4 只改纪要底稿；结果已落盘 corrected.json，S5 只读这个文件。"));
+    var btn = el("button", "btn btn-primary btn-sm", "重新修纪要");
+    btn.type = "button";
+    btn.addEventListener("click", function () { runS4(runId, btn); });
+    s4DetailFoot.appendChild(btn);
+    s4DetailFoot.hidden = false;
+  }
+
+  function renderS4Empty(runId, message) {
+    var body = s4DetailBody;
+    body.textContent = "";
+    body.scrollTop = 0;
+    var bar = el("div", "detail-state");
+    bar.appendChild(el("span", "d-state-badge muted", "未修"));
+    bar.appendChild(el("span", "detail-state-msg", message || "这次运行还没修过纪要。"));
+    body.appendChild(bar);
+    body.appendChild(el("p", "detail-note",
+      "S4 按 S3 问题清单和逐条裁决，把纪要里说错、说不清的单句改成和数据一致的说法；没有问题的句子原样保留。"));
+    s4DetailFoot.textContent = "";
+    s4DetailFoot.appendChild(el("span", "detail-foot-hint",
+      "需要模型改句；有阻断时先去 S3 详情逐条批准或拒绝。"));
+    var btn = el("button", "btn btn-primary btn-sm", "开始修纪要");
+    btn.type = "button";
+    btn.addEventListener("click", function () { runS4(runId, btn); });
+    s4DetailFoot.appendChild(btn);
+    s4DetailFoot.hidden = false;
+  }
+
+  function syncS4FromServer(runId) {
+    if (!runId) return;
+    fetch("/api/s4/" + encodeURIComponent(runId))
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data.ok || !data.corrected) return;
+        var blocked = (data.corrected.stats || {}).blocked || 0;
+        pipeline.s4 = { state: blocked ? "待补充" : "可扩写", run: runId, ok: true };
+        savePipeline();
+        renderPipeline();
+      })
+      .catch(function () {});
+  }
+
+  async function openS4Detail(runId) {
+    if (!runId) return;
+    s4DetailTitle.textContent = "S4 · " + String(runId).toUpperCase();
+    s4DetailBody.textContent = "正在读取…";
+    s4DetailFoot.textContent = "";
+    s4DetailFoot.hidden = true;
+    if (!s4DetailDialog.open) s4DetailDialog.showModal();
+    try {
+      var resp = await fetch("/api/s4/" + encodeURIComponent(runId));
+      var data = await resp.json();
+      if (data.ok && data.corrected) {
+        var st = data.status || {};
+        var blocked = (data.corrected.stats || {}).blocked || 0;
+        setPipelineStage("s4", { state: blocked ? "待补充" : "可扩写", run: runId, ok: true });
+        renderS4Detail(data.corrected, st, runId);
+      } else {
+        renderS4Empty(runId, data.error || "这次运行还没修过纪要。");
+      }
+    } catch (err) {
+      s4DetailBody.textContent = "读取失败：" + (err.message || err);
+    }
+  }
+
+  async function runS4(runId, btn) {
+    if (!runId) return;
+    var label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "修纪要中…";
+    try {
+      var resp = await fetch("/api/s4", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: runId })
+      });
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.message || data.error || "修纪要失败");
+      setPipelineStage("s4", { state: data.state || "", run: data.run_id || runId, ok: true });
+      renderS4Detail(data.corrected || {}, { state: data.state || "", note: data.message || "" },
+        data.run_id || runId);
+      if (data.message) appendMessage("assistant", data.message);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = label;
+      s4Error("修纪要失败：" + (err.message || err));
+    }
+  }
+
+  function s5StateTone(state) {
+    if (state === "已生成" || state === "待审核") return "ok";
+    if (state === "退回修改") return "stop";
+    return "warn";
+  }
+
+  function stopS5Polling() {
+    if (s5PollTimer) { clearInterval(s5PollTimer); s5PollTimer = null; }
+  }
+
+  function startS5Polling(runId) {
+    stopS5Polling();
+    s5PollTimer = setInterval(async function () {
+      try {
+        var resp = await fetch("/api/s5/" + encodeURIComponent(runId));
+        var data = await resp.json();
+        if (data && data.running) return;
+        stopS5Polling();
+        if (data && data.ok && data.draft) {
+          setPipelineStage("s5", {
+            state: String((data.status || {}).state || "待审核"), run: runId, ok: true
+          });
+          renderS5Detail(data, runId);
+        } else {
+          renderS5Empty(runId, (data && data.error) || "这次运行还没扩写。");
+        }
+      } catch (err) { /* 下一轮再试 */ }
+    }, 3000);
+  }
+
+  function s5Error(text) {
+    var old = s5DetailBody.querySelector(".s5-error");
+    if (old) old.remove();
+    s5DetailBody.insertBefore(el("p", "detail-note s5-error", text), s5DetailBody.firstChild);
+    s5DetailBody.scrollTop = 0;
+  }
+
+  function s5AppendInline(parent, text) {
+    var re = /\[\[f:([^\]]+)\]\]/g;
+    var last = 0;
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      parent.appendChild(el("code", "s5-token", "[[f:" + m[1] + "]]"));
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+  }
+
+  function s5SkeletonTexts(skeleton) {
+    var out = [];
+    (Array.isArray(skeleton) ? skeleton : []).forEach(function (item) {
+      var s = (typeof item === "string") ? item
+        : (item && (item.fixed || item.text || item.original)) || "";
+      s = String(s || "").trim();
+      if (s) out.push(s);
+    });
+    return out;
+  }
+  function s5LineKind(text, skels) {
+    if (!skels.length) return null;
+    var plain = String(text).replace(/\[\[f:([^\]]+)\]\]/g, "").trim();
+    for (var i = 0; i < skels.length; i++) {
+      if (!skels[i]) continue;
+      if (plain.indexOf(skels[i]) >= 0 || skels[i].indexOf(plain) >= 0) return "骨架";
+    }
+    return "补充句";
+  }
+
+  function s5RenderMarkdown(text, skels) {
+    skels = Array.isArray(skels) ? skels : [];
+    var wrap = el("div", "s5-draft");
+    var lines = String(text || "").split(/\r?\n/);
+    var i = 0;
+    while (i < lines.length) {
+      var line = lines[i];
+      if (!line.trim()) { i += 1; continue; }
+      if (line.indexOf("# ") === 0) {
+        wrap.appendChild(el("h3", "", line.slice(2)));
+        i += 1;
+        continue;
+      }
+      if (line.indexOf("## ") === 0) {
+        wrap.appendChild(el("h4", "", line.slice(3)));
+        i += 1;
+        continue;
+      }
+      if (line.trim().charAt(0) === "|") {
+        var table = el("table", "");
+        var thead = el("thead", "");
+        var tbody = el("tbody", "");
+        var rowIndex = 0;
+        while (i < lines.length && lines[i].trim().charAt(0) === "|") {
+          var row = lines[i].trim();
+          if (!/^\|[\s\-:|]+\|$/.test(row)) {
+            var cells = row.replace(/^\||\|$/g, "").split("|").map(function (x) { return x.trim(); });
+            var tr = el("tr", "");
+            cells.forEach(function (cell) {
+              var cellEl = el(rowIndex === 0 ? "th" : "td", "");
+              s5AppendInline(cellEl, cell);
+              tr.appendChild(cellEl);
+            });
+            if (rowIndex === 0) thead.appendChild(tr);
+            else tbody.appendChild(tr);
+            rowIndex += 1;
+          }
+          i += 1;
+        }
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        continue;
+      }
+      var para = [];
+      while (i < lines.length && lines[i].trim()
+        && lines[i].indexOf("#") !== 0 && lines[i].trim().charAt(0) !== "|") {
+        para.push(lines[i].trim());
+        i += 1;
+      }
+      var p = el("p", "");
+      var joined = para.join(" ");
+      var kind = s5LineKind(joined, skels);
+      if (kind) {
+        p.appendChild(el("span", "s5-linetag " + (kind === "骨架" ? "skeleton" : "supp"),
+          kind === "骨架" ? "纪要骨架" : "补充句"));
+      }
+      s5AppendInline(p, joined);
+      wrap.appendChild(p);
+    }
+    return wrap;
+  }
+
+  function s5Pct(value) {
+    if (typeof value === "number") return (value * 100).toFixed(1) + "%";
+    return value == null ? "—" : String(value);
+  }
+
+  function s5FigureList(data, runId) {
+    var out = [];
+    var sources = (data.figures && data.figures.length) ? data.figures
+      : ((data.manifest && data.manifest.figures) || []);
+    sources.forEach(function (raw, index) {
+      var item = raw || {};
+      var png = item.png || "";
+      if (!png && item.files && item.files.png) {
+        var file = String(item.files.png).split("/").pop();
+        png = "/api/s5/" + encodeURIComponent(runId) + "/figure/" + encodeURIComponent(file);
+      }
+      out.push({
+        number: item.number != null ? item.number : (index + 1),
+        title: item.title || "",
+        caption: item.caption || "",
+        png: png,
+        renderer: item.renderer || "",
+        keys: (item.keys || []).join("、")
+      });
+    });
+    return out;
+  }
+
+  async function loadS5History(runId, box) {
+    box.textContent = "加载中…";
+    try {
+      var resp = await fetch("/api/s5/" + encodeURIComponent(runId) + "/history");
+      var data = await resp.json();
+      box.textContent = "";
+      var items = data.items || [];
+      if (!items.length) {
+        box.appendChild(el("p", "detail-note",
+          "还没有历史版本；下一次重跑前会自动把当前稿归档。"));
+        return;
+      }
+      var list = el("div", "s5-history-list");
+      items.forEach(function (item) {
+        var btn = el("button", "s5-history-item",
+          (item.stamp || "—") + " · " + (item.figures || 0) + " 图 · "
+          + (item.chars || 0) + " 字");
+        btn.type = "button";
+        btn.addEventListener("click", function () {
+          openS5History(runId, item.stamp, box);
+        });
+        list.appendChild(btn);
+      });
+      box.appendChild(list);
+    } catch (err) {
+      box.textContent = "读取历史版本失败：" + (err.message || err);
+    }
+  }
+
+  async function openS5History(runId, stamp, box) {
+    var view = box.querySelector(".s5-history-view");
+    if (!view) {
+      view = el("div", "s5-history-view");
+      box.appendChild(view);
+    }
+    view.textContent = "加载中…";
+    try {
+      var resp = await fetch("/api/s5/" + encodeURIComponent(runId)
+        + "/history/" + encodeURIComponent(stamp));
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.error || "读取失败");
+      view.textContent = "";
+      var meta = data.meta || {};
+      view.appendChild(el("p", "detail-note",
+        (meta.archived_at || stamp) + " · " + (data.figures || []).length + " 图"));
+      view.appendChild(el("pre", "s5-history-draft", data.draft || ""));
+    } catch (err) {
+      view.textContent = "读取失败：" + (err.message || err);
+    }
+  }
+
+  function s5EditQuestionsButton(runId) {
+    var btn = el("button", "btn btn-ghost btn-sm", "编辑问题");
+    btn.type = "button";
+    btn.title = "在 S5 页面增删改数据发现问题";
+    btn.addEventListener("click", function () {
+      window.open("/s5.html?run=" + encodeURIComponent(runId), "_blank");
+    });
+    return btn;
+  }
+
+  function s5ReviewButton(runId, state) {
+    if (state === "已通过") return s6LinkButton(runId, "去第六步生成交付包");
+    if (state === "已交付") return s6LinkButton(runId, "查看交付包");
+    var btn = el("button", "btn btn-ghost btn-sm", state === "待审核" ? "签名确认审核" : "去审核");
+    btn.type = "button";
+    btn.title = "在 S5 页面签名确认审核";
+    btn.addEventListener("click", function () {
+      window.open("/s5.html?run=" + encodeURIComponent(runId), "_blank");
+    });
+    return btn;
+  }
+
+  function s6LinkButton(runId, label) {
+    var link = el("a", "btn btn-ghost btn-sm", label);
+    link.href = "/s6.html?run=" + encodeURIComponent(runId);
+    link.target = "_blank";
+    link.rel = "noopener";
+    return link;
+  }
+
+  function renderS5Detail(data, runId) {
+    var body = s5DetailBody;
+    body.textContent = "";
+    body.scrollTop = 0;
+    s5DetailFoot.textContent = "";
+    s5DetailFoot.hidden = true;
+    var status = data.status || {};
+    var stats = data.stats || {};
+    var discCount = (data.discoveries && data.discoveries.length) || stats.discoveries || stats.hotspots || 0;
+
+    var meta = [runId, data.week || status.week].filter(Boolean).join(" · ");
+    if (meta) body.appendChild(el("p", "detail-note", meta));
+
+    var grid = el("div", "s5-stats");
+    [["正文字数", stats.chars_body_rendered || 0],
+     ["图数", stats.figures || 0],
+     ["数据发现", discCount],
+     ["占位符", (stats.placeholders && stats.placeholders.total) || 0]].forEach(function (pair) {
+      var box = el("div", "s2-stat");
+      box.appendChild(el("div", "k", pair[0]));
+      box.appendChild(el("div", "v", String(pair[1])));
+      grid.appendChild(box);
+    });
+    body.appendChild(grid);
+
+    var skels = s5SkeletonTexts(data.skeleton || []);
+    var draftSec = detailSection("正文");
+    draftSec.appendChild(el("p", "detail-note",
+      "S5 收尾已替换 [[f:…]] 占位符；扩写完成会自动送审。"));
+    if (skels.length) {
+      var legend = el("p", "s5-legend");
+      legend.appendChild(el("span", "s5-linetag skeleton", "纪要骨架"));
+      legend.appendChild(document.createTextNode(" 共 " + skels.length + " 句逐字保留；"));
+      legend.appendChild(el("span", "s5-linetag supp", "补充句"));
+      legend.appendChild(document.createTextNode(" 为挂在同一主题骨架句之后的数据发现。"));
+      draftSec.appendChild(legend);
+    }
+    draftSec.appendChild(s5RenderMarkdown(data.draft || "", skels));
+    body.appendChild(draftSec);
+
+    var discoveries = data.discoveries || [];
+    if (discoveries.length) {
+      var discSec = detailSection("数据发现");
+      discSec.appendChild(el("p", "detail-note",
+        "模型逐条提出的单步探索问题，结果经代码规范化后写入台账（[[f:键名]]）。点击任意一行可查看生成的 pandas 代码。"));
+      var inc = stats.incremental;
+      if (inc && typeof inc === "object") {
+        discSec.appendChild(el("p", "detail-note",
+          "上次扩写：" + (inc.recomputed || 0) + " 条重算，"
+          + (inc.reused || 0) + " 条复用"
+          + (inc.removed ? "，" + inc.removed + " 条移除" : "") + "。"));
+      }
+      var dt = el("table", "s5-disc");
+      var dhead = el("thead", "");
+      var dhr = el("tr", "");
+      ["编号", "探索问题", "结果", "绑定键名", "code_hash"].forEach(function (h) {
+        dhr.appendChild(el("th", "", h));
+      });
+      dhead.appendChild(dhr);
+      var dbody = el("tbody", "");
+      discoveries.forEach(function (raw, di) {
+        var f = raw || {};
+        var tr = el("tr", "disc-row");
+        tr.title = "点击查看这条发现用到的 pandas 代码";
+        var keys = Array.isArray(f.keys) ? f.keys.join("、") : (f.keys || "—");
+        var disp = (f.display !== null && f.display !== undefined && f.display !== "")
+          ? f.display : (f.value != null ? f.value : "—");
+        var hash = f.code_hash ? String(f.code_hash).slice(0, 12) : "—";
+        var idTd = el("td", "mono nowrap");
+        idTd.appendChild(el("span", "disc-caret", "▸"));
+        idTd.appendChild(document.createTextNode(String(f.id || ("D" + (di + 1)))));
+        [idTd, el("td", "", String(f.question || "—")), el("td", "", String(disp)),
+         el("td", "", String(keys)), el("td", "", String(hash))]
+          .forEach(function (cell) { tr.appendChild(cell); });
+        var codeRow = el("tr", "disc-code-row hidden");
+        var codeTd = el("td", "");
+        codeTd.colSpan = 5;
+        var codeText = String(f.code || "").trim();
+        if (codeText) {
+          codeTd.appendChild(el("pre", "disc-code", codeText));
+        } else {
+          codeTd.appendChild(el("div", "disc-code-note", "这次没有拿到可展示的代码。"));
+        }
+        codeRow.appendChild(codeTd);
+        tr.addEventListener("click", function () {
+          codeRow.classList.toggle("hidden");
+          tr.classList.toggle("open", !codeRow.classList.contains("hidden"));
+        });
+        dbody.appendChild(tr);
+        dbody.appendChild(codeRow);
+      });
+      dt.appendChild(dhead);
+      dt.appendChild(dbody);
+      discSec.appendChild(dt);
+      body.appendChild(discSec);
+    }
+
+    var figures = s5FigureList(data, runId);
+    if (figures.length) {
+      var figSec = detailSection("图表");
+      var figGrid = el("div", "s5-figs");
+      figures.forEach(function (fig) {
+        var card = el("div", "s5-fig");
+        if (fig.png) {
+          var img = el("img", "");
+          img.src = fig.png;
+          img.alt = fig.title;
+          img.loading = "lazy";
+          img.addEventListener("error", function () {
+            var miss = el("div", "fig-missing",
+              "图 " + fig.number + " 加载失败：文件缺失，重跑 S5 后再刷新。");
+            if (img.parentNode) img.parentNode.replaceChild(miss, img);
+          });
+          card.appendChild(img);
+        } else {
+          card.appendChild(el("div", "detail-note", "图片不可用"));
+        }
+        var cap = el("div", "cap");
+        if (fig.renderer === "pandasai" || fig.renderer === "altair") {
+          cap.appendChild(el("span", "s5-engine",
+            fig.renderer === "altair" ? "Altair 生成" : "pandasai 生成"));
+        }
+        cap.appendChild(document.createTextNode(fig.caption));
+        card.appendChild(cap);
+        figGrid.appendChild(card);
+      });
+      figSec.appendChild(figGrid);
+      body.appendChild(figSec);
+    }
+
+    var hotspots = data.hotspots || [];
+    if (hotspots.length) {
+      var hotSec = detailSection("热点");
+      var table = el("table", "s5-draft");
+      var thead = el("thead", "");
+      var headRow = el("tr", "");
+      ["对象", "指标", "变化", "影响", "写入", "位置"].forEach(function (h) {
+        headRow.appendChild(el("th", "", h));
+      });
+      thead.appendChild(headRow);
+      var tbody = el("tbody", "");
+      hotspots.forEach(function (hot) {
+        var tr = el("tr", "");
+        [hot.object || "—", hot.metric || "—", s5Pct(hot.change),
+         (typeof hot.impact === "number" ? Math.round(hot.impact).toLocaleString() : (hot.impact || "—")),
+         hot.written ? "是" : "否", hot.section || "—"].forEach(function (cell) {
+          tr.appendChild(el("td", "", String(cell)));
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      hotSec.appendChild(table);
+      body.appendChild(hotSec);
+    }
+
+    var hist = el("details", "s5-history");
+    hist.appendChild(el("summary", "", "历史版本"));
+    var histBody = el("div", "s5-history-body");
+    hist.appendChild(histBody);
+    body.appendChild(hist);
+    loadS5History(runId, histBody);
+
+    var state = String(status.state || data.state || "");
+    s5DetailFoot.appendChild(s5EditQuestionsButton(runId));
+    if (state) s5DetailFoot.appendChild(s5ReviewButton(runId, state));
+    var canWrite = !state || ["可扩写", "已生成", "待审核", "退回修改"].indexOf(state) >= 0;
+    var btn = el("button", "btn btn-primary btn-sm", canWrite ? "重新扩写" : "已通过审核");
+    btn.type = "button";
+    btn.disabled = !canWrite;
+    btn.addEventListener("click", function () { runS5(runId, btn); });
+    s5DetailFoot.appendChild(btn);
+    s5DetailFoot.hidden = false;
+  }
+
+  function renderS5Empty(runId, message) {
+    var body = s5DetailBody;
+    body.textContent = "";
+    body.scrollTop = 0;
+    var bar = el("div", "detail-state");
+    bar.appendChild(el("span", "d-state-badge muted", "未扩写"));
+    bar.appendChild(el("span", "detail-state-msg", message || "这次运行还没写正文。"));
+    body.appendChild(bar);
+    body.appendChild(el("p", "detail-note",
+      "S5 以 S4 修正稿为骨架逐句保留，借助模型探索数据、按需出图，并在骨架上补数据发现；完成后自动送审。"));
+    s5DetailFoot.textContent = "";
+    s5DetailFoot.appendChild(el("span", "detail-foot-hint",
+      "需要模型写作；S4 状态须为可扩写。"));
+    s5DetailFoot.appendChild(s5EditQuestionsButton(runId));
+    var btn = el("button", "btn btn-primary btn-sm", "开始扩写");
+    btn.type = "button";
+    btn.addEventListener("click", function () { runS5(runId, btn); });
+    s5DetailFoot.appendChild(btn);
+    s5DetailFoot.hidden = false;
+  }
+
+  function syncS5FromServer(runId) {
+    if (!runId) return;
+    fetch("/api/s5/" + encodeURIComponent(runId))
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (data && data.running) {
+          pipeline.s5 = { state: "扩写中", run: runId, ok: true };
+          savePipeline();
+          renderPipeline();
+          return;
+        }
+        if (!data.ok || !data.draft) return;
+        var state = String((data.status || {}).state || "待审核");
+        pipeline.s5 = { state: state, run: runId, ok: true };
+        if (state === "已交付") {
+          pipeline.s6 = { state: "已交付", run: runId, ok: true };
+        }
+        savePipeline();
+        renderPipeline();
+      })
+      .catch(function () {});
+  }
+
+  function renderS5Running(runId, data) {
+    var body = s5DetailBody;
+    body.textContent = "";
+    body.scrollTop = 0;
+    var bar = el("div", "detail-state warn");
+    bar.appendChild(el("span", "d-state-badge", "扩写中"));
+    bar.appendChild(el("span", "detail-state-msg",
+      "正在扩写… 关闭弹窗不会中断，完成后自动刷新。"));
+    body.appendChild(bar);
+    if (data && data.draft) {
+      body.appendChild(el("p", "detail-note", "当前显示的是上一版，完成后会自动替换。"));
+    }
+    s5DetailFoot.textContent = "";
+    var btn = el("button", "btn btn-primary btn-sm", "扩写中…");
+    btn.type = "button";
+    btn.disabled = true;
+    s5DetailFoot.appendChild(btn);
+    s5DetailFoot.hidden = false;
+    setPipelineStage("s5", { state: "扩写中", run: runId, ok: true });
+    startS5Polling(runId);
+  }
+
+  async function openS5Detail(runId) {
+    if (!runId) return;
+    stopS5Polling();
+    s5DetailTitle.textContent = "S5 · " + String(runId).toUpperCase();
+    s5DetailBody.textContent = "正在读取…";
+    s5DetailFoot.textContent = "";
+    s5DetailFoot.hidden = true;
+    if (!s5DetailDialog.open) s5DetailDialog.showModal();
+    try {
+      var resp = await fetch("/api/s5/" + encodeURIComponent(runId));
+      var data = await resp.json();
+      if (data.running) {
+        renderS5Running(runId, data);
+        return;
+      }
+      if (data.ok && data.draft) {
+        setPipelineStage("s5", {
+          state: String((data.status || {}).state || "待审核"), run: runId, ok: true
+        });
+        renderS5Detail(data, runId);
+      } else {
+        renderS5Empty(runId, data.error || "这次运行还没扩写。");
+      }
+    } catch (err) {
+      s5DetailBody.textContent = "读取失败：" + (err.message || err);
+    }
+  }
+
+  async function runS5(runId, btn) {
+    if (!runId) return;
+    var label = btn.textContent;
+    stopS5Polling();
+    setPipelineStage("s5", { state: "扩写中", run: runId, ok: true });
+    btn.disabled = true;
+    btn.textContent = "扩写中…（约 20–60 秒）";
+    try {
+      var resp = await fetch("/api/s5", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: runId })
+      });
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.message || data.error || "扩写失败");
+      stopS5Polling();
+      setPipelineStage("s5", { state: data.state || "待审核", run: data.run_id || runId, ok: true });
+      var view = {
+        ok: true, state: data.state || "", message: data.message || "",
+        status: data.status || { state: data.state || "" },
+        draft: data.draft || "", stats: data.stats || {},
+        manifest: data.manifest || {}, figures: data.figures || [],
+        hotspots: data.hotspots || [], week: data.week || "",
+        discoveries: data.discoveries || [], skeleton: data.skeleton || []
+      };
+      renderS5Detail(view, data.run_id || runId);
+      if (data.message) appendMessage("assistant", data.message);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = label;
+      if (String(err.message || "").indexOf("正在运行") >= 0) {
+        openS5Detail(runId);
+      } else {
+        s5Error("扩写失败：" + (err.message || err));
+      }
     }
   }
 
@@ -1908,11 +2831,11 @@ body.drawer-open{overflow:hidden}
     sessionId = data.session_id;
     loadPipeline();
     renderPipeline();
-    var latestRun = (pipeline.s3 && pipeline.s3.run)
-      || (pipeline.s2 && pipeline.s2.run)
-      || (pipeline.s1 && pipeline.s1.run)
-      || "";
-    if (latestRun) refreshApprovals(latestRun);
+    var syncRun = (pipeline.s4 && pipeline.s4.run) || (pipeline.s3 && pipeline.s3.run) || "";
+    if (syncRun) {
+      syncS4FromServer(syncRun);
+      syncS5FromServer(syncRun);
+    }
     boundNames = data.files || [];
     setBound(boundNames.length
       ? "本次会话已绑定：" + boundNames.join("、")
@@ -2057,9 +2980,6 @@ body.drawer-open{overflow:hidden}
   }
 
   if (newChatBtn) newChatBtn.addEventListener("click", startNewChat);
-  if (approveAllBtn) approveAllBtn.addEventListener("click", function () {
-    approveAllStages(approveAllBtn.dataset.run, approveAllBtn);
-  });
   historyBtn.addEventListener("click", openHistory);
   drawerClose.addEventListener("click", closeHistory);
   historyDialog.addEventListener("click", function (event) {
@@ -2097,6 +3017,16 @@ body.drawer-open{overflow:hidden}
   s3DetailClose.addEventListener("click", function () { s3DetailDialog.close(); });
   s3DetailDialog.addEventListener("click", function (event) {
     if (event.target === s3DetailDialog) s3DetailDialog.close();
+  });
+
+  s4DetailClose.addEventListener("click", function () { s4DetailDialog.close(); });
+  s4DetailDialog.addEventListener("click", function (event) {
+    if (event.target === s4DetailDialog) s4DetailDialog.close();
+  });
+
+  s5DetailClose.addEventListener("click", function () { stopS5Polling(); s5DetailDialog.close(); });
+  s5DetailDialog.addEventListener("click", function (event) {
+    if (event.target === s5DetailDialog) s5DetailDialog.close();
   });
 
   function setBusy(busy) {

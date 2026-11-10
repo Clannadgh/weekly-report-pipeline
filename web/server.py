@@ -31,7 +31,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(ROOT, "web", "static")
@@ -455,6 +455,188 @@ def list_s3_runs() -> list[dict]:
     return items
 
 
+def list_s4_runs() -> list[dict]:
+    """只列 S3 已经对过账（cards.json 可用）的运行，附上改稿与结论进度。"""
+    if not os.path.isdir(RUNS_DIR):
+        return []
+    from pipeline.approvals import load as load_approvals, tally
+
+    items: list[dict] = []
+    for entry in sorted(os.listdir(RUNS_DIR)):
+        folder = os.path.join(RUNS_DIR, entry)
+        if entry.startswith("_") or not os.path.isdir(folder):
+            continue
+        intake_path = os.path.join(folder, "intake.json")
+        if not os.path.isfile(intake_path):
+            continue
+        cards_path = os.path.join(folder, "cards.json")
+        if not os.path.isfile(cards_path):
+            continue
+        cards = try_read_json(cards_path)
+        if cards.get("state") != "ok":
+            continue
+        intake = try_read_json(intake_path)
+        if intake.get("state") != "准入通过":
+            continue
+        run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
+        minutes = intake.get("minutes") if isinstance(intake.get("minutes"), dict) else {}
+        issues_path = os.path.join(folder, "issues.json")
+        issues = try_read_json(issues_path) if os.path.isfile(issues_path) else {}
+        stats = issues.get("stats") if isinstance(issues.get("stats"), dict) else {}
+        blocking_ids = [str(item.get("id")) for item in (issues.get("issues") or [])
+                        if isinstance(item, dict) and item.get("level") == "阻断" and item.get("id")]
+        approvals = load_approvals(folder)
+        state = tally(approvals.get("s3"), blocking_ids)
+        status = try_read_json(os.path.join(folder, "status.json"))
+        items.append({
+            "run_id": str(run.get("period_tag") or entry),
+            "dir": str(run.get("dir") or entry),
+            "period": (str(minutes.get("period_start") or "") + " 至 "
+                       + str(minutes.get("period_end") or "")).strip(" 至"),
+            "cards": int((cards.get("stats") or {}).get("cards") or 0),
+            "checkable": int((cards.get("stats") or {}).get("checkable") or 0),
+            "has_issues": bool(issues),
+            "blocking": int(stats.get("blocking") or 0),
+            "decided": len(state["accepted"]) + len(state["rejected"]),
+            "has_corrected": os.path.isfile(os.path.join(folder, "corrected.json")),
+            "state": str(status.get("state") or ""),
+            "at": str(status.get("at") or ""),
+        })
+    items.sort(key=lambda item: (item["at"], item["run_id"]), reverse=True)
+    return items
+
+
+def _figure_version(folder: str, name: str) -> str:
+    """文件名不变时用 mtime+size 做版本号，避免浏览器拿旧图。"""
+    try:
+        info = os.stat(os.path.join(folder, "figures", name))
+    except OSError:
+        return ""
+    return str(int(info.st_mtime)) + "-" + str(info.st_size)
+
+
+def s5_figures_for_api(manifest: dict, tag: str, folder: str = "") -> list[dict]:
+    """把图表清单里的图补上可直接访问的 URL，GET 与 POST 两种响应共用同一形状。"""
+    out: list[dict] = []
+    base = "/api/s5/" + quote(tag, safe="") + "/figure/"
+    for item in (manifest.get("figures") or []) if isinstance(manifest, dict) else []:
+        files = item.get("files") if isinstance(item.get("files"), dict) else {}
+        png = os.path.basename(str(files.get("png") or ""))
+        svg = os.path.basename(str(files.get("svg") or ""))
+        png_ver = _figure_version(folder, png) if png else ""
+        svg_ver = _figure_version(folder, svg) if svg else ""
+        renderer = str(item.get("renderer") or ("matplotlib" if svg else "pandasai"))
+        out.append({
+            "number": item.get("number"), "title": item.get("title"),
+            "caption": item.get("caption"), "renderer": renderer,
+            "model": item.get("model") or "",
+            "quality": item.get("quality") or {},
+            "flags": item.get("flags") or [],
+            "png": (base + quote(png, safe="") + (("?v=" + png_ver) if png_ver else "")) if png else "",
+            "svg": (base + quote(svg, safe="") + (("?v=" + svg_ver) if svg_ver else "")) if svg else "",
+            "keys": item.get("keys") or [],
+            "bind_key": "、".join(item.get("keys") or []),
+            "script": item.get("script") or "",
+            "script_sha256": item.get("script_sha256") or "",
+        })
+    return out
+
+
+def s6_delivery_for_api(tag: str, folder: str) -> dict:
+    """S6 交付包：版本、最新清单与带下载 URL 的文件列表。"""
+    try:
+        from pipeline import s6_deliver
+
+        data = s6_deliver.read_status(folder)
+    except Exception as exc:  # noqa: BLE001 - 没有交付包不是错误
+        log("读取 S6 交付状态失败：" + repr(exc))
+        return {"versions": [], "manifest": {}, "files": []}
+    versions = data.get("versions") or []
+    manifest = data.get("manifest") or {}
+    latest = versions[-1] if versions else None
+    files: list[dict] = []
+    if latest:
+        root = os.path.join(folder, "deliver", latest["version"])
+        base = ("/api/s6/" + quote(tag, safe="") + "/deliver-file/"
+                + latest["version"] + "/")
+        if os.path.isdir(root):
+            for name in sorted(os.listdir(root)):
+                path = os.path.join(root, name)
+                if os.path.isfile(path):
+                    files.append({"name": name, "bytes": os.path.getsize(path),
+                                  "url": base + quote(name, safe="")})
+                elif os.path.isdir(path):
+                    for sub in sorted(os.listdir(path)):
+                        sub_path = os.path.join(path, sub)
+                        if os.path.isfile(sub_path):
+                            files.append({
+                                "name": name + "/" + sub,
+                                "bytes": os.path.getsize(sub_path),
+                                "url": base + quote(name + "/" + sub, safe=""),
+                            })
+    return {"versions": versions, "manifest": manifest, "files": files}
+
+
+def list_s5_runs() -> list[dict]:
+    """只列 S4 已交稿（corrected.json 可用）的运行，附上正文进度。"""
+    if not os.path.isdir(RUNS_DIR):
+        return []
+    items: list[dict] = []
+    for entry in sorted(os.listdir(RUNS_DIR)):
+        folder = os.path.join(RUNS_DIR, entry)
+        if entry.startswith("_") or not os.path.isdir(folder):
+            continue
+        intake_path = os.path.join(folder, "intake.json")
+        if not os.path.isfile(intake_path):
+            continue
+        intake = try_read_json(intake_path)
+        if intake.get("state") != "准入通过":
+            continue
+        if not os.path.isfile(os.path.join(folder, "corrected.json")):
+            continue
+        if not os.path.isfile(os.path.join(folder, "ledger.json")):
+            continue
+        run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
+        minutes = intake.get("minutes") if isinstance(intake.get("minutes"), dict) else {}
+        status = try_read_json(os.path.join(folder, "status.json"))
+        state = str(status.get("state") or "")
+        can_write = state in ("可扩写", "已生成", "待审核", "退回修改")
+        draft_path = os.path.join(folder, "draft.md")
+        has_draft = os.path.isfile(draft_path)
+        facts = try_read_json(os.path.join(folder, "s5_facts.json")) if has_draft else {}
+        stats = facts.get("stats") if isinstance(facts.get("stats"), dict) else {}
+        manifest = try_read_json(os.path.join(folder, "figures_manifest.json"))
+        record = try_read_json(os.path.join(folder, "review_record.json"))
+        pages = stats.get("pages_estimate")
+        items.append({
+            "run_id": str(run.get("period_tag") or entry),
+            "dir": str(run.get("dir") or entry),
+            "period": (str(minutes.get("period_start") or "") + " 至 "
+                       + str(minutes.get("period_end") or "")).strip(" 至"),
+            "week": str(minutes.get("week") or ""),
+            "state": state,
+            "can_write": can_write,
+            "has_draft": has_draft,
+            "figures": len(manifest.get("figures") or []),
+            "chars": int(stats.get("chars_body_rendered") or 0),
+            "pages": float(pages.get("value") or 0) if isinstance(pages, dict) else 0,
+            "round": int(record.get("round") or 0),
+            "reviewer": str(record.get("reviewer") or ""),
+            "signature": str(record.get("signature") or ""),
+            "decision": str(record.get("decision") or ""),
+            "paused": bool(record.get("paused")),
+            "has_record": bool(record),
+            "at": str(status.get("at") or ""),
+        })
+    items.sort(key=lambda item: (item["at"], item["run_id"]), reverse=True)
+    return items
+
+
+def list_s6_runs() -> list[dict]:
+    """S6 只列 S5 已经出稿的运行；是否可交付由状态决定。"""
+    return [item for item in list_s5_runs() if item.get("has_draft")]
+
+
 def status_for_intake(intake: dict) -> dict:
     """POST 之后回读 status.json；还没落盘就返回空对象，不替 S1 编状态。"""
     run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
@@ -484,6 +666,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def redirect_to(self, location: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def send_json(self, payload: Any, code: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=JSON_INDENT).encode("utf-8")
@@ -521,8 +709,53 @@ class Handler(BaseHTTPRequestHandler):
                 self.serve_static("s2.html")
             elif path in ("/s3", "/s3.html"):
                 self.serve_static("s3.html")
+            elif path in ("/s4", "/s4.html"):
+                self.serve_static("s4.html")
+            elif path in ("/s5", "/s5.html"):
+                self.serve_static("s5.html")
+            elif path in ("/s6", "/s6.html"):
+                self.serve_static("s6.html")
+            elif path in ("/s7", "/s7.html", "/s8", "/s8.html"):
+                # 旧交付页链接统一跳到 S6
+                query = urlparse(self.path).query
+                self.redirect_to("/s6.html" + ("?" + query if query else ""))
             elif path.startswith("/static/"):
                 self.serve_asset(path[len("/static/"):])
+            elif path == "/api/s4/runs":
+                self.send_json({"ok": True, "runs": list_s4_runs()})
+            elif path.startswith("/api/s4/"):
+                self.serve_s4_result(path[len("/api/s4/"):])
+            elif path == "/api/s5/runs":
+                self.send_json({"ok": True, "runs": list_s5_runs()})
+            elif path.startswith("/api/s5/"):
+                rest = path[len("/api/s5/"):]
+                if rest.endswith("/questions"):
+                    self.serve_s5_questions(rest[:-len("/questions")])
+                elif rest.endswith("/history"):
+                    self.serve_s5_history(rest[:-len("/history")])
+                elif "/history/" in rest:
+                    tag, _, remainder = rest.partition("/history/")
+                    if "/figure/" in remainder:
+                        stamp, _, name = remainder.partition("/figure/")
+                        self.serve_s5_history_figure(tag, stamp, name)
+                    elif remainder:
+                        self.serve_s5_history_detail(tag, remainder)
+                    else:
+                        self.serve_s5_history(tag)
+                elif "/figure/" in rest:
+                    tag, _, name = rest.partition("/figure/")
+                    self.serve_s5_figure(tag, name)
+                else:
+                    self.serve_s5_result(rest)
+            elif path == "/api/s6/runs":
+                self.send_json({"ok": True, "runs": list_s6_runs()})
+            elif path.startswith("/api/s6/"):
+                rest = path[len("/api/s6/"):]
+                if "/deliver-file/" in rest:
+                    tag, _, tail = rest.partition("/deliver-file/")
+                    self.serve_s6_delivery_file(tag, tail)
+                else:
+                    self.serve_s6_result(rest)
             elif path == "/api/s3/runs":
                 self.send_json({"ok": True, "runs": list_s3_runs()})
             elif path.startswith("/api/s3/"):
@@ -684,7 +917,7 @@ class Handler(BaseHTTPRequestHandler):
                         "waiver": waiver, "note": note, "log": logs})
 
     def handle_approve(self, tag: str) -> None:
-        """记录用户对 S1/S2/S3 结果的批准；批准后才允许进入下一步。"""
+        """记录用户对 S3 阻断建议的结论：accept＝批准，reject＝拒绝。"""
         payload = self.read_json_body()
         if payload is None:
             return
@@ -692,48 +925,54 @@ class Handler(BaseHTTPRequestHandler):
         if folder is None:
             self.send_error_json(404, "找不到运行目录：" + tag)
             return
-        available = []
-        for key, name in (("s1", "intake.json"), ("s2", "cards.json"), ("s3", "issues.json")):
-            if os.path.isfile(os.path.join(folder, name)):
-                available.append(key)
+        stage = str(payload.get("stage") or "s3").strip().lower()
+        if stage != "s3":
+            self.send_error_json(400, "现在只支持处理 S3 的阻断建议", "")
+            return
+        issues = try_read_json(os.path.join(folder, "issues.json"))
+        if not issues:
+            self.send_error_json(400, "还没有 S3 对账结果，先跑 S3", "")
+            return
+        blocking = [str(item.get("id")) for item in (issues.get("issues") or [])
+                    if isinstance(item, dict) and item.get("level") == "阻断" and item.get("id")]
+        if not blocking:
+            self.send_error_json(400, "当前没有阻断，无需处理", "")
+            return
+        action = str(payload.get("action") or "accept").strip().lower()
+        if action not in ("accept", "reject"):
+            self.send_error_json(400, "action 只能是 accept / reject", "")
+            return
+        issue_id = str(payload.get("issue_id") or "").strip()
+        note = str(payload.get("note") or "")
 
-        raw_stages = payload.get("stages")
-        if isinstance(raw_stages, list) and raw_stages:
-            requested = [str(item).strip().lower() for item in raw_stages]
-            if any(item not in ("s1", "s2", "s3") for item in requested):
-                self.send_error_json(400, "stages 只能是 s1/s2/s3", "")
-                return
-            targets = [item for item in requested if item in available]
-            if not targets:
-                self.send_error_json(400, "没有可批准的结果", "")
-                return
-        else:
-            stage = str(payload.get("stage") or "all").strip().lower()
-            if stage not in ("s1", "s2", "s3", "all"):
-                self.send_error_json(400, "stage 只能是 s1/s2/s3/all", "")
-                return
-            if stage == "all":
-                targets = available
-            else:
-                if stage not in available:
-                    self.send_error_json(400, "还没有 " + stage.upper() + " 结果，先跑这一步", "")
-                    return
-                targets = [stage]
-            if not targets:
-                self.send_error_json(400, "还没有任何可批准的结果", "")
-                return
+        from pipeline.approvals import (decide, decide_all, load as load_approvals,
+                                        tally)
 
-        from pipeline.approvals import approve as approve_stages
-
-        note = str(payload.get("note") or "用户在界面点击批准")
+        before = tally(load_approvals(folder).get("s3"), blocking)
+        if not issue_id and not before["pending"]:
+            self.send_error_json(400, "阻断都已处理", "")
+            return
         try:
-            approvals = approve_stages(folder, targets, note=note)
+            if issue_id:
+                entry = decide(folder, issue_id, action, blocking, note=note)
+            else:
+                entry = decide_all(folder, blocking, decision=action, note=note)
+        except ValueError as exc:
+            self.send_error_json(400, str(exc), "")
+            return
         except OSError as exc:
             self.send_error_json(500, "写 approval.json 失败", str(exc))
             return
 
-        labels = "、".join(item.upper() for item in targets)
-        session_note = "已批准 " + labels + "（" + tag + "）。"
+        approvals = load_approvals(folder)
+        state = tally(approvals.get("s3"), blocking)
+        verb = "批准" if action == "accept" else "拒绝"
+        if issue_id:
+            session_note = "已" + verb + " " + issue_id + " 的建议。"
+        else:
+            session_note = "已" + verb + " " + str(len(before["pending"])) + " 条阻断建议。"
+        if state["pending"]:
+            session_note += "还有 " + str(len(state["pending"])) + " 条待处理。"
         session_id = str(payload.get("session_id") or "").strip()
         if session_id:
             with _SESSION_LOCK:
@@ -745,10 +984,10 @@ class Handler(BaseHTTPRequestHandler):
                     session.save()
                 except Exception as exc:  # noqa: BLE001
                     log("写入批准提示失败：" + repr(exc))
-        log("已批准 " + labels + "：" + tag)
-        self.send_json({"ok": True, "approvals": approvals,
-                        "approval": approvals.get("s3", {}),
-                        "note": session_note})
+        log("S3 阻断结论：" + tag + " " + session_note)
+        self.send_json({"ok": True, "run_id": tag, "approvals": approvals,
+                        "approval": entry, "blocking": blocking,
+                        "decisions": state, "note": session_note})
 
     def handle_approvals(self, tag: str) -> None:
         folder = resolve_run_dir(tag)
@@ -758,6 +997,500 @@ class Handler(BaseHTTPRequestHandler):
         from pipeline.approvals import load as load_approvals
 
         self.send_json({"ok": True, "run_id": tag, "approvals": load_approvals(folder)})
+
+    def serve_s4_result(self, run_id: str) -> None:
+        """读已落盘的 corrected.json / status.json，不现场重算。"""
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        path = os.path.join(folder, "corrected.json")
+        if not os.path.isfile(path):
+            self.send_json({"ok": False, "run_id": tag, "error": "这次运行还没修过纪要"})
+            return
+        self.send_json({"ok": True, "run_id": tag,
+                        "corrected": try_read_json(path),
+                        "status": try_read_json(os.path.join(folder, "status.json"))})
+
+    def handle_s4(self) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        run_id = str(payload.get("run_id") or "").strip()
+        if not run_id:
+            self.send_error_json(400, "缺少 run_id", "")
+            return
+        folder = resolve_run_dir(run_id)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + run_id)
+            return
+        try:
+            from pipeline.s4_draft import run_s4
+
+            log("S4 开始：" + folder)
+            outcome = run_s4(folder)
+            result = outcome.to_dict() if hasattr(outcome, "to_dict") else outcome
+        except FileNotFoundError as exc:
+            self.send_error_json(400, str(exc), "")
+            return
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给前端
+            log("S4 失败：" + repr(exc))
+            self.send_error_json(500, "S4 执行失败", traceback.format_exc())
+            return
+        log("S4 完成：" + str(result.get("state") or ""))
+        self.send_json(result)
+
+    def serve_s6_delivery_file(self, run_id: str, tail: str) -> None:
+        """读交付包里的单个文件（docx / md / 图）；拒绝越界路径。"""
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        parts = [unquote(item) for item in tail.split("/") if item]
+        if len(parts) < 2 or any(item in (".", "..") for item in parts):
+            self.send_error_json(400, "路径不合法")
+            return
+        version = parts[0]
+        if not re.fullmatch(r"v\d+", version):
+            self.send_error_json(400, "版本号不合法")
+            return
+        target = os.path.join(folder, "deliver", version, *parts[1:])
+        root = os.path.realpath(os.path.join(folder, "deliver", version))
+        real = os.path.realpath(target)
+        if not (real == root or real.startswith(root + os.sep)) or not os.path.isfile(real):
+            self.send_error_json(404, "文件不存在")
+            return
+        ctype = ASSET_TYPES.get(os.path.splitext(real)[1].lower())
+        if not ctype:
+            ctype = ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                     if os.path.splitext(real)[1].lower() == ".docx"
+                     else "application/octet-stream")
+        try:
+            with open(real, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            self.send_error_json(500, "读取文件失败")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition",
+                         "inline; filename*=UTF-8''" + quote(parts[-1], safe=""))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_s6_deliver(self, run_id: str) -> None:
+        self.discard_body()
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        try:
+            from pipeline import s6_deliver
+
+            log("S6 交付：" + folder)
+            outcome = s6_deliver.deliver(folder)
+        except Exception as exc:  # noqa: BLE001
+            log("S6 交付失败：" + repr(exc))
+            self.send_error_json(500, "S6 交付失败", traceback.format_exc())
+            return
+        self.send_json(outcome.to_dict())
+
+    def handle_s5_submit(self, run_id: str) -> None:
+        self.discard_body()
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        try:
+            from pipeline import s5_review
+
+            log("S5 送审：" + folder)
+            outcome = s5_review.submit(folder)
+        except FileNotFoundError as exc:
+            self.send_error_json(400, str(exc), "")
+            return
+        except Exception as exc:  # noqa: BLE001
+            log("S5 送审失败：" + repr(exc))
+            self.send_error_json(500, "S5 送审失败", traceback.format_exc())
+            return
+        self.send_json(outcome.to_dict())
+
+    def handle_s5_decision(self, run_id: str) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        reviewer = str(payload.get("reviewer") or "").strip()
+        signature = str(payload.get("signature") or "").strip()
+        decision = str(payload.get("decision") or "").strip().lower()
+        comments = payload.get("comments")
+        if not isinstance(comments, list):
+            comments = []
+        try:
+            from pipeline import s5_review
+
+            log("S5 审核：" + folder + " / " + decision)
+            outcome = s5_review.decide(folder, reviewer, decision, comments,
+                                       signature=signature)
+        except FileNotFoundError as exc:
+            self.send_error_json(400, str(exc), "")
+            return
+        except Exception as exc:  # noqa: BLE001
+            log("S5 审核失败：" + repr(exc))
+            self.send_error_json(500, "S5 审核失败", traceback.format_exc())
+            return
+        self.send_json(outcome.to_dict())
+
+    def serve_s5_history(self, run_id: str) -> None:
+        """列出某个运行的历史版本（新到旧）。"""
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        root = os.path.join(folder, "history")
+        items: list[dict] = []
+        if os.path.isdir(root):
+            for name in sorted(os.listdir(root), reverse=True):
+                target = os.path.join(root, name)
+                if not os.path.isdir(target):
+                    continue
+                meta = try_read_json(os.path.join(target, "meta.json"))
+                stats = meta.get("stats") if isinstance(meta.get("stats"), dict) else {}
+                items.append({
+                    "stamp": name,
+                    "archived_at": str(meta.get("archived_at") or ""),
+                    "state": str(meta.get("state") or ""),
+                    "note": str(meta.get("note") or ""),
+                    "figures": int(meta.get("figures") or 0),
+                    "chars": int(stats.get("chars_body_rendered") or 0),
+                })
+        self.send_json({"ok": True, "run_id": tag, "items": items})
+
+    def serve_s5_history_detail(self, run_id: str, stamp: str) -> None:
+        """读某个历史版本的 draft / manifest / meta。"""
+        tag = unquote(run_id)
+        stamp = unquote(stamp)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        history = os.path.realpath(os.path.join(folder, "history"))
+        target = os.path.realpath(os.path.join(history, stamp))
+        try:
+            inside = os.path.commonpath([history, target]) == history
+        except ValueError:
+            inside = False
+        if not inside or not os.path.isdir(target):
+            self.send_error_json(404, "找不到历史版本：" + stamp)
+            return
+        draft_path = os.path.join(target, "draft.md")
+        if not os.path.isfile(draft_path):
+            self.send_error_json(404, "历史版本缺少 draft.md")
+            return
+        try:
+            text = Path(draft_path).read_text(encoding="utf-8")
+        except OSError as exc:
+            self.send_error_json(500, "读取历史 draft 失败", str(exc))
+            return
+        manifest = try_read_json(os.path.join(target, "figures_manifest.json"))
+        meta = try_read_json(os.path.join(target, "meta.json"))
+        base = ("/api/s5/" + quote(tag, safe="") + "/history/"
+                + quote(stamp, safe="") + "/figure/")
+        figures = []
+        for fig in manifest.get("figures") or []:
+            if not isinstance(fig, dict):
+                continue
+            files = fig.get("files") if isinstance(fig.get("files"), dict) else {}
+            png = os.path.basename(str(files.get("png") or ""))
+            svg = os.path.basename(str(files.get("svg") or ""))
+            item = dict(fig)
+            item["png"] = base + quote(png, safe="") if png else ""
+            item["svg"] = base + quote(svg, safe="") if svg else ""
+            figures.append(item)
+        self.send_json({"ok": True, "run_id": tag, "stamp": stamp,
+                        "draft": text, "manifest": manifest, "meta": meta,
+                        "figures": figures})
+
+    def serve_s5_history_figure(self, run_id: str, stamp: str, name: str) -> None:
+        """读历史版本里的图片。"""
+        tag = unquote(run_id)
+        stamp = unquote(stamp)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录")
+            return
+        name = unquote(name or "")
+        ext = os.path.splitext(name)[1].lower()
+        if os.path.basename(name) != name or ext not in (".png", ".svg"):
+            self.send_error_json(404, "找不到图片：" + name)
+            return
+        history = os.path.realpath(os.path.join(folder, "history"))
+        root = os.path.realpath(os.path.join(history, stamp, "figures"))
+        target = os.path.realpath(os.path.join(root, name))
+        try:
+            inside = os.path.commonpath([root, target]) == root
+        except ValueError:
+            inside = False
+        if not inside or not os.path.isfile(target):
+            self.send_error_json(404, "找不到图片：" + name)
+            return
+        with open(target, "rb") as handle:
+            body = handle.read()
+        self._send(200, body, "image/png" if ext == ".png" else "image/svg+xml")
+
+    def serve_s6_result(self, run_id: str) -> None:
+        """S6 交付页：审核记录、状态与交付包。"""
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        intake = try_read_json(os.path.join(folder, "intake.json"))
+        run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
+        minutes = intake.get("minutes") if isinstance(intake.get("minutes"), dict) else {}
+        title = ""
+        try:
+            for line in Path(folder, "draft.md").read_text(encoding="utf-8").splitlines():
+                if line.startswith("# "):
+                    title = line[2:].strip()
+                    break
+        except OSError:
+            title = ""
+        period = (str(minutes.get("period_start") or "") + " 至 "
+                  + str(minutes.get("period_end") or "")).strip(" 至")
+        self.send_json({
+            "ok": True,
+            "run_id": tag,
+            "dir": str(run.get("dir") or folder),
+            "week": str(minutes.get("week") or run.get("period_tag") or tag),
+            "period": period,
+            "title": title,
+            "status": try_read_json(os.path.join(folder, "status.json")),
+            "record": try_read_json(os.path.join(folder, "review_record.json")),
+            "delivery": s6_delivery_for_api(tag, folder),
+        })
+
+    def serve_s5_result(self, run_id: str) -> None:
+        """读已落盘的 draft.md / 图表清单 / 状态，不现场重算。"""
+        tag = unquote(run_id)
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        try:
+            from pipeline.s5_write import is_running as s5_is_running
+
+            running = s5_is_running()
+        except Exception:  # noqa: BLE001 - 运行标记失败不挡页面
+            running = False
+        draft_path = os.path.join(folder, "draft.md")
+        if not os.path.isfile(draft_path):
+            self.send_json({"ok": False, "run_id": tag, "running": running,
+                            "status": try_read_json(os.path.join(folder, "status.json")),
+                            "error": "这次运行还没扩写"})
+            return
+        try:
+            text = Path(draft_path).read_text(encoding="utf-8")
+        except OSError as exc:
+            self.send_error_json(500, "读取 draft.md 失败", str(exc))
+            return
+        manifest = try_read_json(os.path.join(folder, "figures_manifest.json"))
+        facts = try_read_json(os.path.join(folder, "s5_facts.json"))
+        profile = try_read_json(os.path.join(folder, "profile.json"))
+        ledger = try_read_json(os.path.join(folder, "ledger.json"))
+
+        stats: dict = {}
+        try:
+            from tools.text_stats import analyze, load_banned
+
+            displays = {str(entry.get("key")): str(entry.get("display") or "")
+                        for entry in ledger.get("entries") or [] if entry.get("key")}
+            stats = analyze(text, load_banned(Path(ROOT) / "规范.md"),
+                            stage="draft", ledger_displays=displays)
+        except Exception as exc:  # noqa: BLE001 - 统计失败不挡页面
+            log("S5 统计失败：" + repr(exc))
+        discoveries = facts.get("discoveries") or []
+        # 旧「热点」表与统计字段从发现派生，保持前端兼容
+        hotspots = facts.get("hotspots") or [
+            {"object": str(d.get("id") or ""), "metric": "数据发现",
+             "change": d.get("display"), "impact": d.get("reason"),
+             "written": True, "section": "数据发现补充"}
+            for d in discoveries if isinstance(d, dict)]
+        stats["hotspots"] = len(hotspots)
+        stats["figures"] = len(manifest.get("figures") or [])
+
+        figures = s5_figures_for_api(manifest, tag, folder)
+        record: dict = {}
+        materials: dict = {}
+        try:
+            from pipeline import s5_review
+
+            record = s5_review.load_record(folder)
+            materials = s5_review.build_materials(folder)
+        except Exception as exc:  # noqa: BLE001 - 审核材料失败不挡正文
+            log("读取 S5 审核材料失败：" + repr(exc))
+
+        profile_summary = {}
+        if isinstance(profile, dict) and profile:
+            coverage = profile.get("coverage") if isinstance(profile.get("coverage"), dict) else {}
+            profile_summary = {
+                "ok": bool(profile.get("ok")),
+                "rows": profile.get("n_rows"), "cols": profile.get("n_cols"),
+                "coverage": coverage,
+                "warnings": (profile.get("warnings") or [])[:6],
+                "meta": profile.get("meta") or {},
+            }
+        self.send_json({
+            "ok": True, "run_id": tag, "running": running,
+            "status": try_read_json(os.path.join(folder, "status.json")),
+            "draft": text, "stats": stats, "manifest": manifest,
+            "figures": figures, "hotspots": hotspots,
+            "discoveries": facts.get("discoveries") or [],
+            "skeleton": facts.get("skeleton") or [],
+            "profile_summary": profile_summary,
+            "record": record, "materials": materials,
+        })
+
+    def serve_s5_questions(self, run_id: str) -> None:
+        """读 S5 问题清单；没有清单时回退上一稿的 discoveries。"""
+        tag = unquote(run_id or "")
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        try:
+            from pipeline import s5_questions as sq
+
+            data = sq.effective(folder)
+        except Exception as exc:  # noqa: BLE001 - 清单损坏时把原因交给页面
+            self.send_json({"ok": False, "run_id": tag, "questions": [],
+                            "source": "error", "count": 0, "dirty": False,
+                            "applied": False, "updated_at": "", "error": str(exc)})
+            return
+        payload = {"ok": True, "run_id": tag}
+        payload.update(data)
+        self.send_json(payload)
+
+    def handle_s5_questions(self, run_id: str) -> None:
+        """保存整份问题清单（页面编辑）或 reset 恢复自动出题。"""
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        tag = unquote(run_id or "")
+        folder = resolve_run_dir(tag)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + tag)
+            return
+        try:
+            from pipeline.s5_write import is_running
+
+            if is_running():
+                self.send_error_json(409, "S5 正在运行", "等它结束后再改问题。")
+                return
+        except Exception:  # noqa: BLE001 - 运行标记失败不挡保存
+            pass
+        try:
+            from pipeline import s5_questions as sq
+
+            if payload.get("reset"):
+                sq.reset_plan(folder)
+                reset = True
+            else:
+                sq.save_plan(folder, payload.get("questions"),
+                             source="user", run_id=tag)
+                reset = False
+            data = sq.effective(folder)
+        except ValueError as exc:
+            self.send_error_json(400, "问题清单无效", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            log("保存问题清单失败：" + repr(exc))
+            self.send_error_json(500, "保存问题清单失败", str(exc))
+            return
+        result = {"ok": True, "run_id": tag, "reset": reset}
+        result.update(data)
+        self.send_json(result)
+
+    def serve_s5_figure(self, run_id: str, name: str) -> None:
+        folder = resolve_run_dir(unquote(run_id))
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录")
+            return
+        name = unquote(name or "")
+        ext = os.path.splitext(name)[1].lower()
+        if os.path.basename(name) != name or ext not in (".png", ".svg"):
+            self.send_error_json(404, "找不到图片：" + name)
+            return
+        root = os.path.realpath(os.path.join(folder, "figures"))
+        target = os.path.realpath(os.path.join(root, name))
+        try:
+            inside = os.path.commonpath([root, target]) == root
+        except ValueError:
+            inside = False
+        if not inside or not os.path.isfile(target):
+            self.send_error_json(404, "找不到图片：" + name)
+            return
+        with open(target, "rb") as handle:
+            body = handle.read()
+        self._send(200, body, "image/png" if ext == ".png" else "image/svg+xml")
+
+    def handle_s5(self) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        run_id = str(payload.get("run_id") or "").strip()
+        if not run_id:
+            self.send_error_json(400, "缺少 run_id", "")
+            return
+        folder = resolve_run_dir(run_id)
+        if folder is None:
+            self.send_error_json(404, "找不到运行目录：" + run_id)
+            return
+        try:
+            from pipeline.s5_write import run_s5
+
+            full = bool(payload.get("full"))
+            log("S5 开始：" + folder + ("（全量）" if full else ""))
+            outcome = run_s5(folder, full=full)
+            result = outcome.to_dict() if hasattr(outcome, "to_dict") else outcome
+        except FileNotFoundError as exc:
+            self.send_error_json(400, str(exc), "")
+            return
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给前端
+            log("S5 失败：" + repr(exc))
+            self.send_error_json(500, "S5 执行失败", traceback.format_exc())
+            return
+        tag = str(result.get("run_id") or run_id)
+        # 让 POST 响应里的图带上 URL，前端「扩写成功后渲染」与 GET 同一形状
+        result["figures"] = s5_figures_for_api(result.get("manifest") or {}, tag, folder)
+        # discoveries / skeleton：优先用 outcome.to_dict() 带出的字段，缺失则回读 s5_facts.json
+        facts = try_read_json(os.path.join(folder, "s5_facts.json"))
+        if not isinstance(result.get("discoveries"), list):
+            result["discoveries"] = facts.get("discoveries") or []
+        if not isinstance(result.get("skeleton"), list):
+            result["skeleton"] = facts.get("skeleton") or []
+        result["status"] = {"state": result.get("state") or "",
+                            "note": result.get("message") or "",
+                            "updated_by": "S5"}
+        try:
+            from pipeline import s5_review
+
+            result["record"] = s5_review.load_record(folder)
+            result["materials"] = s5_review.build_materials(folder)
+        except Exception as exc:  # noqa: BLE001 - 审核材料失败不挡扩写结果
+            log("读取 S5 审核材料失败：" + repr(exc))
+        log("S5 完成：" + str(result.get("state") or ""))
+        self.send_json(result)
 
     def serve_s3_result(self, run_id: str) -> None:
         """读已落盘的 issues.json / ledger.json，不现场重算。"""
@@ -1103,6 +1836,43 @@ class Handler(BaseHTTPRequestHandler):
         except ConnectionError:
             log("对话流已断开：" + session_id)
 
+    def discard_body(self) -> None:
+        """消费不用的请求体，避免残留字节污染 keep-alive 的下一个请求。"""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length > MAX_BODY:
+            self.close_connection = True
+            return
+        if length > 0:
+            self.rfile.read(length)
+
+    def read_optional_json_body(self) -> dict | None:
+        """读可省略的 JSON 请求体；空体返回 {}，格式错误返回 None。"""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0:
+            return {}
+        if length > MAX_BODY:
+            self.close_connection = True
+            self.send_error_json(400, "请求体过大", "上限 64MB")
+            return None
+        body = self.rfile.read(length)
+        if not body.strip():
+            return {}
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            self.send_error_json(400, "请求体不是合法的 UTF-8 JSON", str(exc))
+            return None
+        if not isinstance(payload, dict):
+            self.send_error_json(400, "请求体必须是 JSON 对象", "")
+            return None
+        return payload
+
     def read_json_body(self) -> dict | None:
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -1137,6 +1907,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/runs/") and path.endswith("/approve"):
             self.handle_approve(path[len("/api/runs/"):-len("/approve")])
+            return
+        if path == "/api/s4":
+            self.handle_s4()
+            return
+        if path.startswith("/api/s6/") and path.endswith("/deliver"):
+            self.handle_s6_deliver(path[len("/api/s6/"):-len("/deliver")])
+            return
+        if path.startswith("/api/s5/") and path.endswith("/submit"):
+            self.handle_s5_submit(path[len("/api/s5/"):-len("/submit")])
+            return
+        if path.startswith("/api/s5/") and path.endswith("/decision"):
+            self.handle_s5_decision(path[len("/api/s5/"):-len("/decision")])
+            return
+        if path.startswith("/api/s5/") and path.endswith("/questions"):
+            self.handle_s5_questions(path[len("/api/s5/"):-len("/questions")])
+            return
+        if path == "/api/s5":
+            self.handle_s5()
             return
         if path == "/api/s3":
             self.handle_s3()

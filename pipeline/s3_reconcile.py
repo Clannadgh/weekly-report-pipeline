@@ -239,6 +239,11 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         raise FileNotFoundError("找不到 intake.json，先跑 S1：" + str(intake_path))
 
     clear_approvals(run_dir, ("s3",))
+    try:
+        (run_dir / "corrected.json").unlink()
+        log.append("本次重跑 S3，已清理旧的 corrected.json（S4 需重跑）")
+    except FileNotFoundError:
+        pass
 
     cards_data = json.loads(cards_path.read_text(encoding="utf-8"))
     intake = json.loads(intake_path.read_text(encoding="utf-8"))

@@ -311,3 +311,55 @@ class CaliberNote(BaseModel):
     hint: str = ""
     by: str = ""
     at: str = ""
+
+
+# ---------------------------------------------------------------- S4 修纪要
+
+CorrectedStatus = Literal["corrected", "kept", "future", "blocked"]
+
+
+class CorrectedItem(BaseModel):
+    """一张卡片的一句话修正。id 沿用 cards.json 的卡片号。"""
+    id: str = ""
+    original: str = ""
+    fixed: str = ""
+    basis: str = ""                # 用到的台账键，多个用「、」分隔
+    status: CorrectedStatus = "kept"
+    confirmed: bool = False
+    issue: str = ""
+    note: str = ""
+
+
+class S4Decision(BaseModel):
+    """用户对一条阻断建议的裁决：data＝按数据改，skip＝不改。"""
+    issue: str = ""
+    choice: Literal["data", "recalc", "skip"] = "data"
+    by: str = ""
+    auto: bool = False
+    at: str = ""
+
+
+class S4QuestionCard(BaseModel):
+    """实体/口径待裁决的问题卡，最多两张。"""
+    id: str = ""
+    issue: str = ""
+    question: str = ""
+    options: list[str] = Field(default_factory=list)
+    suggest: str = ""
+
+
+class CorrectedStats(BaseModel):
+    corrected: int = 0
+    kept: int = 0
+    future: int = 0
+    blocked: int = 0
+
+
+class CorrectedResult(BaseModel):
+    """corrected.json 的契约；S5 只读这个文件。"""
+    week: str = ""
+    items: list[CorrectedItem] = Field(default_factory=list)
+    decisions: list[S4Decision] = Field(default_factory=list)
+    cards: list[S4QuestionCard] = Field(default_factory=list)
+    future: list[CardFuture] = Field(default_factory=list)
+    stats: CorrectedStats = Field(default_factory=CorrectedStats)
