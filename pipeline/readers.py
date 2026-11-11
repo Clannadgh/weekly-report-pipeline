@@ -161,10 +161,11 @@ def _fill_table(info: FileInfo, path: Path) -> None:
 
     if info.format in ("xlsx", "xlsm"):
         info.tables = [name for name, _ in nonempty]
-        info.rows = sum(len(frame) for _, frame in nonempty)
         main = max(nonempty, key=lambda item: len(item[1])) if nonempty else None
         picked = main[1] if main else (trimmed[0][1] if trimmed else None)
-        range_frames = [frame for _, frame in nonempty]
+        # 日期范围只认主表；门店信息/销售目标等附表会把覆盖期拉长
+        info.rows = len(main[1]) if main else 0
+        range_frames = [main[1]] if main else []
     else:
         info.rows = len(trimmed[0][1]) if trimmed else 0
         picked = trimmed[0][1] if trimmed else None

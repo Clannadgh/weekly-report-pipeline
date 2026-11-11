@@ -57,6 +57,7 @@ _LAYOUT = {
 _MIDDLEWARE = (
     "intake.json", "cards.json", "issues.json", "corrected.json", "ledger.json",
     "profile.json", "figures_manifest.json", "qc_result.json", "review_record.json",
+    "s5_fixes.json", "waiver.json",
 )
 
 
@@ -331,7 +332,11 @@ def _ai_summary(draft: str, log: list[str], chat_fn=None) -> str:
         "1) 只依据正文，不新增事实、不新增数字；",
         "2) 摘要里出现的每个数字都必须原样出现在正文中；",
         "3) 按「整体经营 → 主要发现 → 风险与下周关注」组织；",
-        "4) 输出 JSON：{summary: 摘要文本}。",
+        "4) 不写数据质量内容：缺数、缺失、重复、去重、异常记录、负数 / 冲销、",
+        "   记录数 / 行数 / 条数 / 天数、POS 上传 / 网络故障、数据核对等；",
+        "5) 不写「待核实」「需进一步核实」「是否一致」「疑似」「可能」等不确定表述；",
+        "   无法解释的原因不写；",
+        "6) 输出 JSON：{summary: 摘要文本}。",
         "",
         "正文：",
         draft,
@@ -358,6 +363,12 @@ def _ai_summary(draft: str, log: list[str], chat_fn=None) -> str:
         log.append("AI 摘要不是合法 JSON，跳过")
         return ""
     summary = _trim_summary(summary, 240)
+    from . import s5_filters
+
+    cleaned = s5_filters.clean_text(summary)
+    if cleaned != summary:
+        log.append("AI 摘要已过滤数据质量/待核实表述")
+        summary = cleaned
     if not (120 <= len(summary) <= 300):
         log.append("AI 摘要长度不合适（" + str(len(summary)) + " 字），跳过")
         return ""
@@ -523,11 +534,14 @@ _FIG_LINE_RE = re.compile("^图[ 　]*[0-9]+")
 
 
 def _clean_line(text: str) -> str:
-    """去掉过程标记，合并重复的图引用；不改数字和事实。"""
+    """去掉过程标记与图号引用；不改数字和事实。"""
+    from . import s5_filters
+
     out = text.replace("【数据发现】", "").strip()
     out = out.replace("数据发现显示，", "").replace("数据发现显示", "")
     if out.startswith("数据显示，") or out.startswith("数据显示"):
         out = out.replace("数据显示，", "", 1).replace("数据显示", "", 1).strip()
+    out = s5_filters.strip_figure_refs(out)
     out = re.sub("（见图[ 　]*([0-9]+)）[ 　]*（见图[ 　]*([0-9]+)）",
                  lambda m: "（见图 " + m.group(1) + "、图 " + m.group(2) + "）", out)
     out = re.sub("（见图[ 　]*([0-9]+)）[ 　]*数据", lambda m: "（见图 " + m.group(1) + "）", out)
@@ -705,6 +719,20 @@ def deliver(run_dir: str | Path, root: str | Path | None = None,
         return DeliveryOutcome(False, "未知", "找不到 intake.json，先跑完 S1。")
     run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
     minutes = intake.get("minutes") if isinstance(intake.get("minutes"), dict) else {}
+    waivers = []
+    for waiver in intake.get("waived") or []:
+        if not isinstance(waiver, dict):
+            continue
+        items = [str(item).strip() for item in (waiver.get("items") or [])
+                 if str(item).strip()]
+        if not items:
+            continue
+        waivers.append({
+            "at": str(waiver.get("at") or ""),
+            "by": str(waiver.get("by") or ""),
+            "items": items,
+            "reason": str(waiver.get("reason") or ""),
+        })
     run_id = str(run.get("period_tag") or folder.name)
     dir_label = str(run.get("dir") or folder.name)
     status = _read_json(folder / "status.json")
@@ -736,6 +764,7 @@ def deliver(run_dir: str | Path, root: str | Path | None = None,
     ledger_path = folder / "ledger.json"
     manifest_path = folder / "figures_manifest.json"
     review_path = folder / "review_record.json"
+    waiver_path = folder / "waiver.json"
     for path, label in ((draft_path, "draft.md"), (ledger_path, "ledger.json"),
                         (manifest_path, "figures_manifest.json"),
                         (review_path, "review_record.json")):
@@ -857,7 +886,7 @@ def deliver(run_dir: str | Path, root: str | Path | None = None,
         if use_ai and cleaned:
             polished = _ai_polish(cleaned, log, chat_fn)
             if polished:
-                final = polished
+                final = [_clean_line(item) for item in polished]
         for index, value in zip(body_indexes, final):
             lines[index] = value
         report_text = chr(10).join(lines)
@@ -973,6 +1002,8 @@ def deliver(run_dir: str | Path, root: str | Path | None = None,
         shutil.copyfile(manifest_path, tmp / "figures_manifest.json")
         _write_json(tmp / "qc_result.json", qc["payload"])
         shutil.copyfile(review_path, tmp / "review_record.json")
+        if waiver_path.is_file():
+            shutil.copyfile(waiver_path, tmp / "waiver.json")
 
         files = []
         for item in sorted(tmp.rglob("*")):
@@ -1003,6 +1034,7 @@ def deliver(run_dir: str | Path, root: str | Path | None = None,
             "params": dict(_PARAMS),
             "process": _process(facts),
             "middleware": middleware,
+            "waivers": waivers,
             "qc": {"available": qc["available"], "stale": qc["stale"],
                    "verdict": qc["verdict"], "summary": qc["summary"],
                    "note": qc["note"]},
@@ -1053,6 +1085,8 @@ def deliver(run_dir: str | Path, root: str | Path | None = None,
                          run_id=run_id, dir=dir_label, log=log)
 
     note = "已交付：" + version + "，审核人 " + reviewer
+    if waivers:
+        note += "，S1 人工豁免 " + str(len(waivers)) + " 条随包归档"
     if signature:
         note += "，交付签名 " + signature
     _write_status(folder, STATE_DELIVERED, note, version=version,

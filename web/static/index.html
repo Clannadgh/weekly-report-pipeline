@@ -348,6 +348,8 @@
   button.mini.waive{margin-left:8px;border-color:#e0b7b3;color:var(--stop);font-size:11.5px;padding:2px 8px}
   button.mini.waive:hover{background:#fdeceb}
 </style>
+<link rel="stylesheet" href="/static/model-settings.css">
+<script src="/static/model-settings.js" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -384,10 +386,10 @@
     <div class="llm-card">
       <div class="llm-head">
         <span class="dot idle" id="llmDot"></span>
-        <span>模型 <b id="llmModel">glm-5.3-flash</b></span>
+        <span>模型 <b id="llmModel">加载中…</b></span>
         <button id="llmBtn" class="ghost small" type="button">测试连接</button>
       </div>
-      <p class="empty-note" id="llmMsg">使用项目根目录 .env 里的 GLM_API_KEY</p>
+      <p class="empty-note" id="llmMsg">点顶栏「模型」配置供应商</p>
     </div>
 
   </section>
@@ -1083,7 +1085,7 @@
       const resp = await fetch("/api/llm");
       const data = await resp.json();
       if (llmModel) llmModel.textContent = data.model || "未配置";
-      if (!data.configured) { setLlm("bad", data.error || "未找到 GLM_API_KEY，请检查 .env"); return; }
+      if (!data.configured) { setLlm("bad", data.error || "未配置模型：点顶栏「模型」添加供应商"); return; }
       setLlm("idle", "密钥已加载，点右侧测试连接");
     } catch (err) {
       setLlm("bad", "读取模型配置失败：" + err.message);

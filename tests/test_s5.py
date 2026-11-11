@@ -186,8 +186,8 @@ def test_gate_rejects_non_expandable_state(tmp_path, monkeypatch, bad_state):
     assert not (tmp_path / "draft.md").exists()
 
 
-# b) corrected 有 blocked：兼容「前置门禁直接拒绝」与「只写原因待核实不扩写」两种实现；
-#    无论哪种，blocked 原句都不得作为骨架/扩写内容进正文，kept 骨架照常保留
+# b) corrected 有 blocked：blocked 原句不得作为骨架/扩写内容进正文，
+#    也不再生成「待核实」段落；kept 骨架照常保留
 def test_blocked_corrected_is_not_expanded_or_rejected(tmp_path, monkeypatch):
     items = [
         {"id": "M01", "status": "kept", "original": "a",
@@ -201,9 +201,31 @@ def test_blocked_corrected_is_not_expanded_or_rejected(tmp_path, monkeypatch):
     assert outcome.ok, outcome.message
     draft = (tmp_path / "draft.md").read_text(encoding="utf-8")
     assert "KEPT_ONLY_S5" in draft
-    # blocked 不扩写、不作为骨架句进正文，只以「原因待核实」形式出现
     assert "BLOCKED_MARKER_S5" not in draft
-    assert "原因待核实" in draft
+
+
+# b2) 模型写出的数据质量/待核实句子在装配前被过滤
+def test_generated_quality_and_hedges_are_filtered(tmp_path, monkeypatch):
+    _make_run(tmp_path)
+    _stub_s5(monkeypatch, tmp_path, findings=_findings(), item_ids=["M01", "M02"])
+    body = {
+        "supplements": {
+            "M01": "本周实收回升，见图 2，原因待核实。",
+            "M02": "深圳南山店记录数 202 条，疑似重复上传。",
+        },
+        "standalone": ["持续跟踪重复上传数据的核实结果。"],
+        "next_week": ["核实并处理南山店重复数据", "关注竞品开业影响。"],
+    }
+    monkeypatch.setattr(
+        s5, "_call_llm", lambda prompt: json.dumps(body, ensure_ascii=False))
+    outcome = run_s5(tmp_path)
+    assert outcome.ok, outcome.message
+    draft = (tmp_path / "draft.md").read_text(encoding="utf-8")
+    assert "202 条" not in draft
+    assert "持续跟踪重复上传数据的核实结果" not in draft
+    assert "见图" not in draft
+    assert "关注竞品开业影响" in draft
+    assert "## 数据质量与口径说明" in draft
 
 
 # c) 核心红线：每个非 future/blocked 的 items[].fixed 逐字出现在 draft；
@@ -305,7 +327,7 @@ def test_outputs_and_status(tmp_path, monkeypatch):
     outcome = run_s5(tmp_path)
     assert outcome.ok, outcome.message
     for name in ("draft.md", "figures_manifest.json", "profile.json",
-                 "s5_facts.json", "review_record.json"):
+                 "s5_facts.json", "review_record.json", "qc_result.json"):
         assert (tmp_path / name).is_file(), name
     status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
     assert status["state"] == "待审核"
@@ -314,7 +336,9 @@ def test_outputs_and_status(tmp_path, monkeypatch):
     assert record["state"] == "待审核"
     assert record["round"] == 0
     assert record["decision"] == ""
-    assert not (tmp_path / "qc_result.json").exists()
+    qc = json.loads((tmp_path / "qc_result.json").read_text(encoding="utf-8"))
+    assert qc["verdict"] == "PASS"
+    assert qc["draft_after_sha256"]
     draft = (tmp_path / "draft.md").read_text(encoding="utf-8")
     assert "[[f:" not in draft
     history = status.get("history") or []
@@ -436,6 +460,83 @@ def test_run_s5_passes_saved_questions(tmp_path, monkeypatch):
     assert facts["questions_hash"] == sq.questions_hash(seen["questions"])
     assert (tmp_path / "s5_questions.json").is_file()
 
+def _plan_with_ai_keep(run: Path, questions: list[dict]) -> None:
+    """保存清单并预置 AI 过滤结果：全部保留，后续 S5 直接命中缓存。"""
+    from pipeline import s5_questions as sq
+
+    sq.save_plan(run, questions, source="user", run_id="w99")
+    sq.filter_for_run(
+        run, questions,
+        chat_fn=lambda *args, **kwargs: {"text": json.dumps({
+            "keep": [item["id"] for item in questions], "drop": []},
+            ensure_ascii=False)})
+
+
+# o2) AI 已保留的问题（即使理由含「核实 / 是否」）不得被词表二次过滤
+def test_run_s5_trusts_ai_question_filter(tmp_path, monkeypatch):
+    import pipeline.s5_discover as disc_mod
+
+    _make_run(tmp_path)
+    q1 = {"id": "D1", "question": "按区域分组汇总实收金额",
+          "shape": "number", "reason": "核实华南拉动是否所有门店共享"}
+    q2 = {"id": "D2", "question": "本期全司实收金额合计",
+          "shape": "number", "reason": "金额"}
+    _plan_with_ai_keep(tmp_path, [q1, q2])
+
+    f1 = dict(_findings()[0])
+    f1.update({"id": "D1", "question": q1["question"], "reason": q1["reason"],
+               "keys": ["find_D1_0_rev"]})
+    f2 = dict(_findings()[1])
+    f2.update({"id": "D2", "question": q2["question"], "reason": q2["reason"]})
+    seen = {}
+
+    def fake_discover(*args, **kwargs):
+        seen["keep_quality"] = kwargs.get("keep_quality")
+        return {"findings": [f1, f2], "log": ["stub discover"], "model": "stub",
+                "questions": kwargs.get("questions") or [], "source": "plan"}
+
+    _stub_s5(monkeypatch, tmp_path, findings=[f1, f2], item_ids=["M01", "M02"])
+    monkeypatch.setattr(disc_mod, "discover", fake_discover, raising=True)
+    outcome = run_s5(tmp_path)
+    assert outcome.ok, outcome.message
+    assert seen["keep_quality"] is True
+    facts = json.loads((tmp_path / "s5_facts.json").read_text(encoding="utf-8"))
+    assert [item["id"] for item in facts["discoveries"]] == ["D1", "D2"]
+    assert facts["filtered_discoveries"]["findings"] == []
+
+
+# o3) 清单里没取到结果的问题要在状态提示里点名，不能只报「发现 N 条」
+def test_run_s5_reports_questions_without_results(tmp_path, monkeypatch):
+    import pipeline.s5_discover as disc_mod
+
+    _make_run(tmp_path)
+    questions = [
+        {"id": "D1", "question": "本期全司实收金额合计", "shape": "number",
+         "reason": "金额"},
+        {"id": "D2", "question": "本期毛利率", "shape": "number", "reason": "结构"},
+        {"id": "D3", "question": "按渠道分组求实收金额", "shape": "number",
+         "reason": "渠道结构"},
+    ]
+    _plan_with_ai_keep(tmp_path, questions)
+    findings = _findings()
+
+    def fake_discover(*args, **kwargs):
+        if not kwargs.get("keep_quality"):
+            return {"findings": [], "log": [], "model": "stub",
+                    "questions": [], "source": "plan"}
+        return {"findings": findings, "log": ["stub discover"], "model": "stub",
+                "questions": kwargs.get("questions") or [], "source": "plan"}
+
+    _stub_s5(monkeypatch, tmp_path, findings=findings, item_ids=["M01", "M02"])
+    monkeypatch.setattr(disc_mod, "discover", fake_discover, raising=True)
+    outcome = run_s5(tmp_path)
+    assert outcome.ok, outcome.message
+    assert "数据发现 2 条（D1、D2）" in outcome.message
+    assert "问题取数未出结果 1 条：D3" in outcome.message
+    status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
+    assert "问题取数未出结果 1 条：D3" in status["note"]
+
+
 # p) 没有清单时由模型出题，成功后把题目保存下来，供下次编辑 / 复用
 def test_run_s5_saves_auto_questions(tmp_path, monkeypatch):
     import pipeline.s5_discover as disc_mod
@@ -502,7 +603,9 @@ def test_run_s5_incremental_reuses_unchanged_findings(tmp_path, monkeypatch):
     assert second.recomputed == 1
     assert second.reused == 1
     assert second.removed == 1
-    assert [item["id"] for item in calls[1]] == ["D3"]
+    user_calls = [call for call in calls
+                  if call and str(call[0].get("id") or "").startswith("D")]
+    assert [item["id"] for item in user_calls[-1]] == ["D3"]
     assert "增量" in second.message
 
     facts = json.loads((tmp_path / "s5_facts.json").read_text(encoding="utf-8"))
@@ -513,3 +616,105 @@ def test_run_s5_incremental_reuses_unchanged_findings(tmp_path, monkeypatch):
     assert "find_D1_0_rev" in keys
     assert "find_D3_0_rev" in keys
     assert not any("find_D2" in key for key in keys)
+
+
+# h) AI 复核可以调用 pandasai；工具结果进 queries，最终 JSON 决定 ok
+def test_ai_review_can_call_pandasai(monkeypatch):
+    import pipeline.s5_write as s5
+    from pipeline.s5_write import _ai_review_draft
+
+    calls = []
+
+    def fake_query(run_dir, frame, intake, profile, question, shape, log):
+        calls.append({"question": question, "shape": shape})
+        return {"ok": True, "value": 29, "display": "29", "rows": None}
+
+    monkeypatch.setattr(s5, "_pandasai_review_query", fake_query)
+    replies = [
+        {"message": {"content": ""}, "tool_calls": [
+            {"id": "c1", "function": {
+                "name": "ask_pandasai",
+                "arguments": json.dumps({"question": "本周重复记录多少条",
+                                         "shape": "number"}, ensure_ascii=False)}}]},
+        {"text": json.dumps({"ok": True, "issues": [], "suggestions": []},
+                            ensure_ascii=False), "tool_calls": []},
+    ]
+
+    def fake_chat(*args, **kwargs):
+        return replies.pop(0)
+
+    review = _ai_review_draft("正文", {"summary": "本周实收 1 元"},
+                              {"checks": []}, {"week": "2026-W99"},
+                              Path("."), None, {}, {}, [],
+                              chat_fn=fake_chat)
+    assert review["ok"] is True
+    assert calls == [{"question": "本周重复记录多少条", "shape": "number"}]
+    assert review["queries"][0]["result"]["value"] == 29
+
+
+def _qc_text() -> str:
+    return ("## 本周摘要\n摘要\n## 品类表现\n品类\n## 异常与原因\n异常\n"
+            "## 数据质量与口径说明\n质量\n本周实收前 5 单品：拿铁 1 元\n")
+
+
+# i) 没有销售目标数据时，质检查摘要不得硬要「目标达成率」
+def test_qc_final_skips_target_when_data_absent():
+    business = {"summary": "本周全公司实收 1 元，较上周 +1.0%，毛利率 50.0%。",
+                "quality": ["重复记录 1 条"]}
+    qc = s5._qc_final(_qc_text(), business, {"figures": []}, has_target=False)
+    item = next(check for check in qc["checks"] if check["name"] == "摘要指标")
+    assert item["ok"] is True
+    assert "无目标数据" in item["detail"]
+    assert qc["verdict"] == "PASS"
+
+
+# i2) 有目标数据时，摘要仍必须写目标达成率
+def test_qc_final_requires_target_when_data_present():
+    business = {"summary": "本周全公司实收 1 元，较上周 +1.0%，毛利率 50.0%。",
+                "quality": ["重复记录 1 条"]}
+    qc = s5._qc_final(_qc_text(), business, {"figures": []}, has_target=True)
+    item = next(check for check in qc["checks"] if check["name"] == "摘要指标")
+    assert item["ok"] is False
+    assert "目标达成率" in item["detail"]
+
+
+# j) AI 出数必须与代码参考值一致才采用
+def test_numbers_close_rejects_mismatch():
+    from pipeline.s5_write import _numbers_close
+
+    ref = {"total": 100.0, "prev_total": 90.0, "cost": 40.0,
+           "total_target": 120.0,
+           "regions": [{"name": "华东", "amount": 100.0,
+                        "previous": 90.0, "target": 120.0}],
+           "categories": [], "products": [], "stores": []}
+    same = json.loads(json.dumps(ref))
+    assert _numbers_close(same, ref) is True
+    same["total"] = 101.0
+    assert _numbers_close(same, ref) is True
+    same["total"] = 102.0
+    assert _numbers_close(same, ref) is False
+
+
+# k) S1 人工豁免要进入 S5 的 AI 复核提示
+def test_s1_waivers_reach_ai_review(tmp_path, monkeypatch):
+    _make_run(tmp_path)
+    intake = json.loads((tmp_path / "intake.json").read_text(encoding="utf-8"))
+    intake["waived"] = [{
+        "at": "2026-11-11T09:03:51", "by": "用户",
+        "items": ["纪要提到的渠道「商场店、街边店、社区店、写字楼店」在数据列「渠道」里不存在"],
+        "reason": "渠道只是概述",
+    }]
+    (tmp_path / "intake.json").write_text(
+        json.dumps(intake, ensure_ascii=False), encoding="utf-8")
+    _stub_s5(monkeypatch, tmp_path, findings=_findings(), item_ids=["M01", "M02"])
+    captured = {}
+
+    def fake_review(*args, **kwargs):
+        captured["waivers"] = kwargs.get("waivers") or []
+        return {"ok": True, "issues": [], "suggestions": [], "queries": []}
+
+    monkeypatch.setattr(s5, "_ai_review_draft", fake_review)
+    outcome = run_s5(tmp_path)
+    assert outcome.ok, outcome.message
+    assert any("S1 人工豁免" in line and "商场店" in line
+               for line in captured["waivers"])

@@ -43,6 +43,20 @@ import pandas as pd
 from .llm import DEFAULT_MODEL, LLMError, chat
 from .pandasai_glm import make_qa
 from .s5_questions import MAX_QUESTIONS, normalize_questions as normalize_question_list
+from .s5_filters import filter_questions
+
+
+def _model_label(fallback: Any = None) -> str:
+    """日志/结果里展示当前模型名；未配置时退回内置默认值。"""
+    if fallback:
+        return str(fallback)
+    try:
+        from .llm import get_config
+
+        return get_config().model
+    except Exception:  # noqa: BLE001 - 只用于展示
+        return str(DEFAULT_MODEL)
+
 
 # ---------------------------------------------------------------- 常量
 
@@ -71,10 +85,12 @@ _PROMPT = """你是经营周报的数据发现助手。只依据下面给出的�
 4. 数字类问句写明：只输出一个数字，不带单位、不带千分位、不带文字、不画图。
    表格类问句写明：返回两列，一列分组名、一列聚合后的数值。
 5. 问句里带周期（本周起止，必要时对比期起止）与筛选条件，口径明确、可直接执行。
-6. 问题指向值得写进报告的点：幅度（谁最高 / 最低）、金额（谁贡献最大）、结构（占比 / 构成）、
-   反差（与纪要骨架说法不一致，或单店比区域更突出）、质量（缺数 / 重复 / 退货异常）。
-7. 尽量覆盖上述多类，不要 8 个都问同一件事；不要重复问纪要骨架已明确给出的结论（只补细节 / 反差）。
-8. 5–8 个问题里至少 3 个 table，优先「按门店 / 品类 / 渠道 / 商品分组的金额或数量排名」；记录数 / 行数这类数据质量盘点最多 1 个，且不要指望它出图。
+6. 问题指向值得写进报告的经营结论：幅度（谁最高 / 最低）、金额（谁贡献最大）、结构（占比 / 构成）、
+   单店或单品的突出表现。
+7. 不要提数据质量问题：缺数、缺失、重复、去重、异常记录、负数 / 冲销、记录数 / 行数 / 条数 / 天数、
+   POS 上传 / 网络故障、数据核对等一律不问；不要评价纪要说法是否一致，不要写「核实 / 待核实 / 疑似 / 可能」。
+8. 尽量覆盖上述多类，不要 8 个都问同一件事；不要重复问纪要骨架已明确给出的结论，只补细节，不评价底稿说法。
+9. 5–8 个问题里至少 3 个 table，优先「按门店 / 品类 / 渠道 / 商品分组的金额或数量排名」。
 
 【输出】严格 JSON，不要 markdown 代码块、不要任何解释：
 {"questions":[{"id":"D1","question":"...","shape":"number","reason":"为什么值得问（一句话）"},{"id":"D2","question":"...","shape":"table","reason":"..."}]}
@@ -247,7 +263,7 @@ def _normalize_questions(data: dict, log: list[str]) -> list[dict]:
     raw = data.get("questions") if isinstance(data, dict) else None
     out = normalize_question_list(raw, strict=False, max_count=_MAX_Q)
     if out and len(out) < 5:
-        log.append("GLM 只给出 " + str(len(out)) + " 个问题（要求 5–8），按实际数量执行")
+        log.append("模型只给出 " + str(len(out)) + " 个问题（要求 5–8），按实际数量执行")
     return out
 
 
@@ -342,10 +358,13 @@ def _make_finding(fid: str, q: dict, shape: str, res: Any, log: list[str]) -> di
 # ---------------------------------------------------------------- 主入口
 
 def discover(run_dir, frame, intake, profile, skeleton_items,
-             chat_fn=None, qa_factory=None, questions=None) -> dict:
-    """返回 {"findings", "log", "model", "questions", "source"}。
+             chat_fn=None, qa_factory=None, questions=None,
+             keep_quality=False) -> dict:
+    """返回 {"findings", "log", "model", "questions", "source", "dropped_questions"}。
 
     questions 传 None 时由 GLM 出题；传列表时只用这份清单，不再调模型出题。
+    keep_quality=True 用于复核场景或已通过问题过滤的清单，跳过词表二次过滤。
+    dropped_questions 是出题阶段被质量过滤掉、没有执行的问题，供 AI 复核查看。
     失败一律返回空 findings，由上层（s5_write）决定明确失败，不造数。
     """
     log: list[str] = []
@@ -353,6 +372,13 @@ def discover(run_dir, frame, intake, profile, skeleton_items,
     qa_factory = qa_factory or make_qa
     source = "plan" if questions is not None else "auto"
     model = ""
+    dropped_questions: list[dict] = []
+
+    def pack(findings=None, model_name=None, qa_questions=None) -> dict:
+        return {"findings": findings or [], "log": log,
+                "model": model if model_name is None else model_name,
+                "questions": qa_questions or [], "source": source,
+                "dropped_questions": dropped_questions}
 
     if questions is not None:
         try:
@@ -360,8 +386,17 @@ def discover(run_dir, frame, intake, profile, skeleton_items,
                                                 max_count=MAX_QUESTIONS)
         except ValueError as exc:
             log.append("问题清单无效：" + str(exc))
-            return {"findings": [], "log": log, "model": model,
-                    "questions": [], "source": source}
+            return pack()
+        if not keep_quality:
+            raw_questions = list(questions)
+            questions, dropped = filter_questions(questions)
+            dropped_questions = [item for item in raw_questions
+                                 if str(item.get("id") or "") in set(dropped)]
+            if dropped:
+                log.append("跳过数据质量问题：" + "、".join(dropped))
+        if not questions:
+            log.append("问题清单没有可用的经营问题")
+            return pack()
         log.append("使用问题清单 " + str(len(questions)) + " 条，不重新出题")
     else:
         messages = [
@@ -378,13 +413,11 @@ def discover(run_dir, frame, intake, profile, skeleton_items,
             except TypeError:
                 out = chat_fn(messages)  # 测试桩可能不收 kwargs
         except LLMError as exc:
-            log.append("GLM 出题失败：" + str(exc))
-            return {"findings": [], "log": log, "model": str(DEFAULT_MODEL),
-                    "questions": [], "source": source}
+            log.append("模型出题失败：" + str(exc))
+            return pack(model_name=_model_label())
         except Exception as exc:  # noqa: BLE001 - 出题失败交给上层降级
-            log.append("GLM 出题异常：" + str(exc))
-            return {"findings": [], "log": log, "model": str(DEFAULT_MODEL),
-                    "questions": [], "source": source}
+            log.append("模型出题异常：" + str(exc))
+            return pack(model_name=_model_label())
 
         if isinstance(out, dict):
             model = str(out.get("model") or "")
@@ -394,15 +427,19 @@ def discover(run_dir, frame, intake, profile, skeleton_items,
         try:
             data = _extract_json(text)
         except Exception as exc:  # noqa: BLE001 - 模型格式问题，不续写
-            log.append("GLM 出题返回不是合法 JSON：" + str(exc))
-            return {"findings": [], "log": log, "model": model or str(DEFAULT_MODEL),
-                    "questions": [], "source": source}
+            log.append("模型出题返回不是合法 JSON：" + str(exc))
+            return pack(model_name=_model_label(model))
 
         questions = _normalize_questions(data, log)
+        raw_questions = list(questions)
+        questions, dropped = filter_questions(questions)
+        dropped_questions = [item for item in raw_questions
+                             if str(item.get("id") or "") in set(dropped)]
+        if dropped:
+            log.append("跳过数据质量问题：" + "、".join(dropped))
         if not questions:
-            log.append("GLM 没有给出可用的探索问题")
-            return {"findings": [], "log": log, "model": model or str(DEFAULT_MODEL),
-                    "questions": [], "source": source}
+            log.append("模型没有给出可用的经营问题")
+            return pack(model_name=_model_label(model))
 
     cache = Path(run_dir) / "cache" if run_dir is not None else None
     try:
@@ -412,11 +449,10 @@ def discover(run_dir, frame, intake, profile, skeleton_items,
             qa = qa_factory({"df_sales": frame})
     except Exception as exc:  # noqa: BLE001 - 构造失败整体降级
         log.append("构造 DataQA 失败：" + str(exc))
-        return {"findings": [], "log": log, "model": model or str(DEFAULT_MODEL),
-                "questions": questions, "source": source}
+        return pack(model_name=_model_label(model), qa_questions=questions)
 
     if not model:
-        model = str(getattr(qa, "model", "") or "") or str(DEFAULT_MODEL)
+        model = _model_label(getattr(qa, "model", ""))
 
     findings: list[dict] = []
     used_ids: set[str] = set()
@@ -438,5 +474,4 @@ def discover(run_dir, frame, intake, profile, skeleton_items,
 
     log.append("发现完成：可用 " + str(len(findings)) + " 条 / 共 "
                + str(len(questions)) + " 问")
-    return {"findings": findings, "log": log, "model": model,
-            "questions": questions, "source": source}
+    return pack(findings=findings, qa_questions=questions)

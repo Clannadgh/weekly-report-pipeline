@@ -54,6 +54,121 @@ def _clean(value) -> str:
     return re.sub("[ \\u3000]+", " ", str(value or "")).strip()
 
 
+_CAPTION_STOP = ("最高", "最低", "合计", "比较基准", "单位", "周期", "走势",
+                 "分布", "构成", "情况")
+
+
+def _caption_keywords(caption: str) -> list[str]:
+    """从图题里取可用于定位正文段落的关键词（对象名 + 指标名）。"""
+    text = re.sub("（[^）]*）", "", str(caption or ""))
+    text = re.sub("^图[ 　]*[0-9]+[ 　]*", "", text)
+    words: list[str] = []
+    for part in re.split(r"[：:，,、；;\s]+", text):
+        cleaned = part
+        for stop in _CAPTION_STOP:
+            cleaned = cleaned.replace(stop, "")
+        cleaned = cleaned.strip()
+        if len(cleaned) >= 2 and cleaned not in words:
+            words.append(cleaned)
+    return words
+
+
+def _anchor_by_keywords(fig: dict, rows: list[tuple[int, int, int, str]],
+                        used: set[int]) -> int:
+    """正文不写「见图 N」后，按图题与段落的共同关键词就近落图。"""
+    words = _caption_keywords(str(fig.get("caption") or fig.get("title") or ""))
+    if not words:
+        return 0
+    best_score, best_index = 0, 0
+    for _, _, index, text in rows:
+        if index in used:
+            continue
+        score = sum(1 for word in words if word in text)
+        if score > best_score:
+            best_score, best_index = score, index
+    return best_index if best_score >= 2 else 0
+
+
+def _figure_targets(sections: list[dict], figures: list[dict],
+                    selected: list[dict]) -> dict[int, int]:
+    """每张入选图落在哪个段落之后；图号按这个位置从上到下重排。"""
+    rows = _paragraph_index(sections)
+    total = rows[-1][2] if rows else 0
+    analysis_end = total
+    _, sec_ends = _positions(sections)
+    for sec_index, sec in enumerate(sections):
+        heading = str(sec.get("heading") or "")
+        if "下周" in heading or "未来" in heading:
+            analysis_end = sec_ends[sec_index] - len(sec.get("blocks") or [])
+            break
+    by_number = {int(fig["number"]): fig for fig in figures}
+    targets: dict[int, int] = {}
+    used: set[int] = set()
+    for item in selected:
+        try:
+            number = int(item.get("number"))
+        except (TypeError, ValueError):
+            continue
+        fig = by_number.get(number)
+        if not fig:
+            continue
+        target = 0
+        for _, _, index, text in rows:
+            if number in _fig_numbers(text):
+                target = index
+                break
+        if not target:
+            target = _anchor_by_keywords(fig, rows, used)
+        if target:
+            used.add(target)
+        targets[number] = target or analysis_end or total
+    return targets
+
+
+def _caption_with_number(caption: str, number: int) -> str:
+    text = str(caption or "").strip()
+    if re.match("^图[ 　]*[0-9]+", text):
+        return re.sub("^图[ 　]*[0-9]+", "图 " + str(number), text, count=1)
+    return "图 " + str(number) + ("　" + text if text else "")
+
+
+def _renumber_for_display(sections: list[dict], figures: list[dict],
+                          plan: dict) -> tuple[list[dict], dict, dict[int, int]]:
+    """按图在正文中的实际落位重排图号，返回用于渲染的图与计划。"""
+    selected = [item for item in (plan.get("figures") or []) if isinstance(item, dict)]
+    if not selected:
+        return figures, plan, {}
+    targets = _figure_targets(sections, figures, selected)
+    ordered = sorted(enumerate(selected),
+                     key=lambda pair: (targets.get(int(pair[1].get("number")), 0), pair[0]))
+    mapping = {int(item["number"]): display_no
+               for display_no, (_, item) in enumerate(ordered, 1)}
+    if all(source == display for source, display in mapping.items()):
+        return figures, plan, {}
+    by_number = {int(fig["number"]): fig for fig in figures}
+    display_figures: list[dict] = []
+    display_plan = dict(plan)
+    display_plan["figures"] = []
+    for display_no, (_, item) in enumerate(ordered, 1):
+        source_no = int(item["number"])
+        fig = by_number.get(source_no)
+        if not fig:
+            continue
+        clone = dict(fig)
+        clone["number"] = display_no
+        clone["caption"] = _caption_with_number(
+            fig.get("caption") or fig.get("title"), display_no)
+        display_figures.append(clone)
+        width = dict(item)
+        width["number"] = display_no
+        display_plan["figures"].append(width)
+    display_plan["figure_number_map"] = [
+        {"source": source, "display": display}
+        for source, display in sorted(mapping.items(), key=lambda pair: pair[1])
+    ]
+    return display_figures, display_plan, mapping
+
+
 def _display(title: str, headings: dict | None) -> str:
     return (headings or {}).get(title) or title
 
@@ -97,39 +212,20 @@ def _topic(caption: str) -> str:
     return "其他"
 
 
-def _clean_refs(text: str, selected: set[int]) -> str:
-    """去掉未入选图的引用，避免正文指向交付包里不存在的图。"""
-    out = str(text or "")
+def _clean_refs(text: str) -> str:
+    """正文不写「见图 N」：删掉所有图号引用，图改由关键词就近落位。"""
+    from . import s5_filters
 
-    def group(match):
-        numbers = [int(item) for item in FIG_REF_NUM.findall(match.group(0))]
-        kept = [str(number) for number in numbers if number in selected]
-        if not kept:
-            return ""
-        return ("（见图 " + kept[0]
-                + "".join("、图 " + number for number in kept[1:]) + "）")
-
-    out = FIG_REF_GROUP.sub(group, out)
-
-    def inline(match):
-        number = int(match.group(1))
-        return "见图 " + str(number) if number in selected else ""
-
-    out = re.sub("见图[ 　]*([0-9]+)[ 　]*数据", inline, out)
-    out = re.sub("见图[ 　]*([0-9]+)", inline, out)
-    out = re.sub(r"[，、；][ 　]*。", "。", out)
-    out = re.sub("。。+", "。", out)
-    out = re.sub("[ \\u3000]{2,}", " ", out).strip()
-    return out
+    return s5_filters.strip_figure_refs(text)
 
 
-def clean_sections(sections: list[dict], selected: set[int]) -> list[dict]:
+def clean_sections(sections: list[dict], selected: set[int] | None = None) -> list[dict]:
     out: list[dict] = []
     for sec in sections:
         blocks = []
         for block in sec.get("blocks") or []:
             item = dict(block) if isinstance(block, dict) else {"type": "p", "text": str(block)}
-            item["text"] = _clean_refs(item.get("text") or "", selected)
+            item["text"] = _clean_refs(item.get("text") or "")
             blocks.append(item)
         out.append({"heading": sec.get("heading"), "blocks": blocks})
     return out
@@ -334,8 +430,9 @@ def ai_plan(sections: list[dict], figures: list[dict], meta: dict,
     lines.append("图片：")
     for fig in figures:
         number = int(fig["number"])
-        lines.append("- 图 " + str(number) + "：" + str(fig.get("caption") or "")
-                     + "（正文第 " + str(refs.get(number) or "—") + " 段引用）")
+        suffix = ("（正文第 " + str(refs[number]) + " 段引用）"
+                  if refs.get(number) else "")
+        lines.append("- 图 " + str(number) + "：" + str(fig.get("caption") or "") + suffix)
     lines.append("")
     lines.append("只输出 JSON：")
     lines.append('{"headings": {"原标题": "新标题"}, '
@@ -469,25 +566,14 @@ def render_markdown(sections: list[dict], figures: list[dict], meta: dict,
 
     rows = _paragraph_index(sections)
     total = rows[-1][2] if rows else 0
-    analysis_end = total
-    _, sec_ends = _positions(sections)
-    for sec_index, sec in enumerate(sections):
-        heading = str(sec.get("heading") or "")
-        if "下周" in heading or "未来" in heading:
-            analysis_end = sec_ends[sec_index] - len(sec.get("blocks") or [])
-            break
+    targets = _figure_targets(sections, figures, selected)
     after: dict[int, list[dict]] = {}
     for item in selected:
         number = int(item["number"])
         fig = by_number.get(number)
         if not fig:
             continue
-        target = 0
-        for _, _, index, text in rows:
-            if number in _fig_numbers(text):
-                target = index
-                break
-        after.setdefault(target or analysis_end or total, []).append(
+        after.setdefault(targets.get(number) or total or 1, []).append(
             {"fig": fig, "width": item.get("width") or "medium"})
 
     parts = [_cover(meta), _page_break()]
@@ -615,11 +701,14 @@ def plan_layout(sections: list[dict], figures: list[dict], meta: dict, *,
         plan = dict(plan)
         plan["page_break_before"] = []
         pages = estimate_pages(display_sections, plan, figures, summary, tables)
-    markdown = render_markdown(display_sections, figures, meta, plan, summary, tables)
-    errors = validate_markdown(markdown, display_sections, figures,
-                               plan.get("figures") or [])
+    display_figures, display_plan, _ = _renumber_for_display(
+        display_sections, figures, plan)
+    markdown = render_markdown(display_sections, display_figures, meta, display_plan,
+                               summary, tables)
+    errors = validate_markdown(markdown, display_sections, display_figures,
+                               display_plan.get("figures") or [])
     if errors:
         return {"plan": base, "markdown": "", "source": "invalid",
                 "errors": errors, "pages_estimate": pages}
-    return {"plan": plan, "markdown": markdown,
+    return {"plan": display_plan, "figures": display_figures, "markdown": markdown,
             "source": source, "errors": [], "pages_estimate": pages}

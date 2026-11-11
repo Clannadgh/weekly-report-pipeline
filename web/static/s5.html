@@ -371,35 +371,63 @@
   .qnote.error{color:var(--stop)}
   .qcard-actions{display:flex;gap:8px;flex-wrap:wrap}
   .q-dialog{
-    border:none;border-radius:12px;padding:0;width:min(780px,94vw);max-width:780px;
-    background:var(--panel);box-shadow:0 18px 50px rgba(20,30,40,.25);
+    border:none;border-radius:14px;padding:0;width:min(900px,95vw);max-width:900px;
+    max-height:92vh;overflow:hidden;background:var(--panel);
+    box-shadow:0 18px 50px rgba(20,30,40,.25);
   }
   .q-dialog::backdrop{background:rgba(30,40,50,.32)}
-  .q-panel{padding:18px 20px}
-  .q-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .q-panel-head h2{margin:0;font-size:16px}
+  .q-panel{display:flex;flex-direction:column;max-height:92vh;padding:0}
+  .q-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 22px 8px}
+  .q-panel-head h2{margin:0;font-size:17px}
   .q-run{font-size:12px;color:var(--muted);font-weight:400}
-  .q-hint{margin:6px 0 12px;font-size:12px;line-height:1.6;color:var(--muted)}
-  .q-rows{display:flex;flex-direction:column;gap:10px;max-height:56vh;overflow:auto;padding-right:4px}
-  .q-row{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface-muted)}
-  .q-row-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-  .q-id{font-family:Consolas,"Courier New",monospace;font-size:12px;font-weight:600;color:var(--accent)}
-  .q-text{
-    width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;
-    font:inherit;font-size:13px;line-height:1.5;resize:vertical;background:#fff;color:var(--text);
+  .q-hint{margin:0;padding:0 22px;font-size:12.5px;line-height:1.6;color:var(--muted)}
+  .q-rules{margin:5px 22px 0;font-size:12px;color:var(--muted)}
+  .q-rules summary{cursor:pointer;color:var(--accent);width:max-content}
+  .q-rules p{margin:5px 0 0;line-height:1.65}
+  .q-summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 22px 0}
+  .q-summary.hidden{display:none}
+  .q-sum{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid var(--line);border-radius:999px;background:#f8fafc;font-size:12px;color:var(--muted)}
+  .q-sum b{font-size:13px;color:var(--text)}
+  .q-sum .dot{width:7px;height:7px;border-radius:50%;background:#9aa5b1}
+  .q-sum.run .dot{background:var(--ok)}
+  .q-sum.skip{border-color:#eed9ab;background:#fff9ea;color:#8a5a12}
+  .q-sum.skip .dot{background:#b7791f}
+  .q-rows{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;overflow:auto;padding:12px 22px 16px}
+  .q-row{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fff}
+  .q-row.skip{border-color:#eed9ab;background:#fffdf7}
+  .q-row-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;min-height:22px}
+  .q-id{font-family:Consolas,"Courier New",monospace;font-size:12px;font-weight:700;color:var(--accent)}
+  .q-status{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted)}
+  .q-status .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+  .q-status.skip{padding:1px 8px;border:1px solid #f0d9b5;border-radius:999px;background:var(--warn-bg);color:#8a5a12}
+  .q-status.skip .dot{background:#b7791f}
+  .q-row-head .spacer{flex:1}
+  .q-del{padding:2px 4px;border:0;background:none;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
+  .q-del:hover{color:var(--stop)}
+  .q-label{display:block;margin-bottom:4px;font-size:11.5px;font-weight:600;color:var(--muted)}
+  .q-text,.q-reason,.q-shape{
+    width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;
+    font:inherit;background:#fff;color:var(--text);
   }
-  .q-row-foot{display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap}
-  .q-row-foot label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
-  .q-row-foot select,.q-reason{
-    padding:5px 8px;border:1px solid var(--line);border-radius:6px;
-    font:inherit;font-size:12px;background:#fff;color:var(--text);
-  }
-  .q-reason{flex:1;min-width:200px}
-  .q-empty{margin:10px 0;font-size:12px;color:var(--muted)}
-  .q-foot{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+  .q-text,.q-reason{display:block;resize:none;overflow:hidden;line-height:1.55}
+  .q-text{min-height:42px;font-size:13px}
+  .q-reason{min-height:38px;font-size:12.5px}
+  .q-shape{font-size:12.5px;padding:8px 10px}
+  .q-text:focus,.q-reason:focus,.q-shape:focus{outline:2px solid rgba(23,84,156,.16);border-color:#9bbbe0}
+  .q-row-foot{display:grid;grid-template-columns:170px minmax(0,1fr);gap:12px;margin-top:10px}
+  .q-field-reason{min-width:0}
+  .q-empty{margin:10px 0;padding:28px 16px;border:1px dashed var(--line);border-radius:10px;text-align:center;font-size:12.5px;color:var(--muted)}
+  .q-foot{display:flex;align-items:center;gap:10px;padding:12px 22px;border-top:1px solid var(--line);background:#fff}
   .q-msg{flex:1;font-size:12px;color:var(--muted);line-height:1.5}
   .q-msg.error{color:var(--stop)}
-  .q-foot .ghost,.q-foot .primary{flex:none;padding:8px 16px}
+  .q-foot .ghost,.q-foot .primary{flex:none;padding:8px 18px}
+  @media (max-width:720px){
+    .q-dialog{width:96vw;max-height:94vh}
+    .q-panel{max-height:94vh}
+    .q-row-foot{grid-template-columns:1fr}
+    .q-foot{flex-wrap:wrap}
+    .q-msg{flex-basis:100%;order:-1}
+  }
   .block h3 .h3-action{float:right;margin-left:10px}
 
   .placeholder {
@@ -478,6 +506,8 @@
   .review-materials summary { cursor: pointer; font-weight: 600; font-size: 13px; }
   @media (max-width: 720px) { .ce-grid { grid-template-columns: 1fr; } }
 </style>
+<link rel="stylesheet" href="/static/model-settings.css">
+<script src="/static/model-settings.js" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -520,8 +550,8 @@
       <button class="primary" id="runBtn" type="button" disabled>开始扩写</button>
       <button class="ghost" id="reloadBtn" type="button">刷新</button>
     </div>
-    <p class="run-hint">重新扩写默认只重算改动的问题，未改的复用当前结果。
-      <button class="linklike" id="fullRunBtn" type="button" disabled>全量重跑</button>
+    <p class="run-hint">重新扩写会全量重跑，不复用上一稿结果。
+      <button class="linklike" id="incrementalRunBtn" type="button" disabled>只重算改动的问题</button>
     </p>
     <div id="progress"></div>
 
@@ -586,6 +616,13 @@
             </table>
           </div>
           <p class="empty-note hidden" id="unconfirmedEmpty">没有未确认事项。</p>
+        </details>
+
+        <details class="review-materials" id="aiReviewBox">
+          <summary>AI 复核与自动质检</summary>
+          <div class="section-list" id="aiReviewSummary"></div>
+          <div class="section-list" id="aiReviewIssues"></div>
+          <div class="section-list" id="aiReviewQueries"></div>
         </details>
 
         <div id="previousBlock" class="hidden">
@@ -684,7 +721,12 @@
       <h2>数据发现问题 <span class="q-run" id="qDialogRun"></span></h2>
       <button class="mini" id="qCloseBtn" type="button">关闭</button>
     </header>
-    <p class="q-hint">问题清单是 S5 的输入：保存后点「重新扩写」生效。编号用于台账键名，新增时自动分配。</p>
+    <p class="q-hint">问题清单是 S5 的输入。保存后点「开始扩写」生效，模型会先逐条判断是否值得写进周报。</p>
+    <details class="q-rules">
+      <summary>过滤规则</summary>
+      <p>S5 先让模型按经营价值判断保留或跳过；只有模型判断失败时才回退词表。标「可能跳过」的问题在词表里命中数据质量或核实类，可能不执行；跳过的问题只作为复核参考，不写正文。「预计执行」只表示会进入取数，取数失败会在运行状态里点名。编号用于定位和复核，新增时自动分配。</p>
+    </details>
+    <div class="q-summary" id="qSummary"></div>
     <div class="q-rows" id="qRows"></div>
     <p class="q-empty hidden" id="qEmpty">还没有问题，点「+ 新增问题」先加一条。</p>
     <div class="q-foot">
@@ -704,7 +746,7 @@
   var runMeta = document.getElementById("runMeta");
   var runBtn = document.getElementById("runBtn");
   var reloadBtn = document.getElementById("reloadBtn");
-  var fullRunBtn = document.getElementById("fullRunBtn");
+  var incrementalRunBtn = document.getElementById("incrementalRunBtn");
   var progress = document.getElementById("progress");
   var gateWarn = document.getElementById("gateWarn");
   var errorBar = document.getElementById("errorBar");
@@ -731,6 +773,7 @@
   var resetQBtn = document.getElementById("resetQBtn");
   var qDialog = document.getElementById("qDialog");
   var qDialogRun = document.getElementById("qDialogRun");
+  var qSummary = document.getElementById("qSummary");
   var qRows = document.getElementById("qRows");
   var qEmpty = document.getElementById("qEmpty");
   var qMsg = document.getElementById("qMsg");
@@ -747,6 +790,9 @@
   var sectionEmpty = document.getElementById("sectionEmpty");
   var unconfirmedRows = document.getElementById("unconfirmedRows");
   var unconfirmedEmpty = document.getElementById("unconfirmedEmpty");
+  var aiReviewSummary = document.getElementById("aiReviewSummary");
+  var aiReviewIssues = document.getElementById("aiReviewIssues");
+  var aiReviewQueries = document.getElementById("aiReviewQueries");
   var previousBlock = document.getElementById("previousBlock");
   var previousComments = document.getElementById("previousComments");
   var reviewForm = document.getElementById("reviewForm");
@@ -782,7 +828,8 @@
     runId: "", questions: [], source: "none", updatedAt: "",
     dirty: false, applied: false, loaded: false, error: "", reset: false,
     changedIds: [], reusedIds: [], removedIds: [], orderChanged: false,
-    changedCount: 0, reusedCount: 0, removedCount: 0
+    changedCount: 0, reusedCount: 0, removedCount: 0,
+    previewKept: [], previewDropped: []
   };
 
   var PH_RE = /\[\[f:([^\[\]]+)\]\]/g;
@@ -847,7 +894,7 @@
   /* ---------- 动作与门禁 ---------- */
   function updateActions() {
     runBtn.disabled = busy || !current || gateBlocked;
-    fullRunBtn.disabled = busy || !current || gateBlocked;
+    incrementalRunBtn.disabled = busy || !current || gateBlocked;
     reloadBtn.disabled = busy;
     var state = current ? String(current.state || "") : "";
     if (busy) {
@@ -859,7 +906,7 @@
     } else {
       runBtn.textContent = current && current.has_draft ? "重新扩写" : "开始扩写";
     }
-    runBtn.title = "扩写完成后自动送审；默认增量只重算改动的问题";
+    runBtn.title = "扩写完成后自动送审；重新扩写会全量重跑，不复用上一稿结果";
     submitReviewBtn.disabled = busy;
     decideBtn.disabled = busy;
     progress.textContent = busy ? "正在画像、出图、写正文，约需 20–60 秒…" : runSummary;
@@ -1033,6 +1080,8 @@
           questionState.changedCount = data.changed_count || 0;
           questionState.reusedCount = data.reused_count || 0;
           questionState.removedCount = data.removed_count || 0;
+          questionState.previewKept = Array.isArray(data.preview_kept) ? data.preview_kept : [];
+          questionState.previewDropped = Array.isArray(data.preview_dropped) ? data.preview_dropped : [];
         } else {
           questionState.source = (data && data.source) || "error";
           questionState.error = (data && (data.error || data.detail)) || "读取失败";
@@ -1060,7 +1109,7 @@
     } else if (questionState.source === "saved") {
       note = "已保存清单 · " + count + " 条";
       if (questionState.dirty) {
-        note += "；改动还没用于当前稿，重新扩写只重算 "
+        note += "；改动还没用于当前稿，点「只重算改动的问题」会重算 "
           + questionState.changedCount + " 条、复用 " + questionState.reusedCount + " 条";
         if (questionState.removedCount) {
           note += "、移除 " + questionState.removedCount + " 条";
@@ -1113,23 +1162,111 @@
         id: String(item.id || ""),
         question: String(item.question || ""),
         shape: item.shape === "table" ? "table" : "number",
-        reason: String(item.reason || "")
+        reason: String(item.reason || ""),
+        _originalQuestion: String(item.question || ""),
+        _originalShape: item.shape === "table" ? "table" : "number"
       };
     });
     qDialogRun.textContent = "· " + questionState.runId.toUpperCase();
     showQMessage("", false);
-    renderQuestionEditor();
     if (!qDialog.open) qDialog.showModal();
+    renderQuestionEditor();
+    requestAnimationFrame(function () {
+      qRows.querySelectorAll(".q-text, .q-reason").forEach(autoSizeField);
+    });
+  }
+
+  function questionFilterReason(item) {
+    var text = String((item && item.question) || "") + " "
+      + String((item && item.reason) || "");
+    var quality = ["记录数", "记录条数", "记录行数", "记录数量", "数据行", "行数",
+      "条数", "天数", "缺失", "缺数", "空值", "重复", "去重", "异常记录",
+      "负数", "冲销", "数据质量", "数据核对", "核对数据", "重复上传",
+      "上传数据", "网络波动", "POS 故障", "POS故障"];
+    var meta = ["核实", "是否一致", "不一致", "疑似", "待确认", "需确认",
+      "为什么", "原因"];
+    if (quality.some(function (word) { return text.indexOf(word) >= 0; })) {
+      return "数据质量类";
+    }
+    if (meta.some(function (word) { return text.indexOf(word) >= 0; })) {
+      return "核实类";
+    }
+    return "";
+  }
+
+  function previewStatus(item) {
+    var unchanged = item.question === item._originalQuestion
+      && item.shape === item._originalShape;
+    if (unchanged) {
+      var dropped = (questionState.previewDropped || []).filter(function (entry) {
+        return String((entry && entry.id) || "") === String(item.id || "");
+      })[0];
+      if (dropped) return { skip: true, why: String(dropped.why || "") };
+      if ((questionState.previewKept || []).indexOf(String(item.id || "")) >= 0) {
+        return { skip: false, why: "" };
+      }
+    }
+    var reason = questionFilterReason(item);
+    return { skip: !!reason, why: reason };
+  }
+
+  function autoSizeField(field) {
+    field.style.height = "auto";
+    field.style.height = Math.max(field.scrollHeight, 38) + "px";
+  }
+
+  function renderQuestionSummary(runCount, skipCount) {
+    qSummary.textContent = "";
+    if (!editorQuestions.length) {
+      qSummary.classList.add("hidden");
+      return;
+    }
+    qSummary.classList.remove("hidden");
+    var total = el("span", "q-sum");
+    total.appendChild(el("b", "", String(editorQuestions.length)));
+    total.appendChild(document.createTextNode(" 条问题"));
+    qSummary.appendChild(total);
+    var hasPreview = (questionState.previewKept || []).length
+      || (questionState.previewDropped || []).length;
+    if (!hasPreview) return;
+    var run = el("span", "q-sum run");
+    run.appendChild(el("span", "dot"));
+    run.appendChild(el("b", "", String(runCount)));
+    run.appendChild(document.createTextNode(" 条预计执行"));
+    qSummary.appendChild(run);
+    var skip = el("span", "q-sum skip");
+    skip.appendChild(el("span", "dot"));
+    skip.appendChild(el("b", "", String(skipCount)));
+    skip.appendChild(document.createTextNode(" 条可能跳过"));
+    qSummary.appendChild(skip);
   }
 
   function renderQuestionEditor() {
+    var keepScroll = qRows.scrollTop;
     qRows.textContent = "";
+    var runCount = 0;
+    var skipCount = 0;
     editorQuestions.forEach(function (item) {
-      var row = el("div", "q-row");
+      var preview = previewStatus(item);
+      var filterReason = preview.skip ? (questionFilterReason(item) || "模型判定") : "";
+      if (preview.skip) skipCount += 1; else runCount += 1;
+
+      var row = el("div", "q-row" + (preview.skip ? " skip" : ""));
       var head = el("div", "q-row-head");
       head.appendChild(el("span", "q-id", item.id || "—"));
-      var del = el("button", "mini", "删除");
+      var status = el("span", "q-status" + (preview.skip ? " skip" : ""));
+      status.appendChild(el("span", "dot"));
+      status.appendChild(document.createTextNode(
+        preview.skip ? "可能跳过 · " + filterReason : "预计执行"));
+      status.title = preview.skip
+        ? ("跳过预告：" + (preview.why || filterReason)
+           + "；模型保留仍会执行。")
+        : "本次预计执行；只有模型判断失败时才回退词表。";
+      head.appendChild(status);
+      head.appendChild(el("span", "spacer"));
+      var del = el("button", "q-del", "删除");
       del.type = "button";
+      del.title = "删除这条问题";
       del.addEventListener("click", function () {
         editorQuestions = editorQuestions.filter(function (other) { return other !== item; });
         renderQuestionEditor();
@@ -1137,17 +1274,24 @@
       head.appendChild(del);
       row.appendChild(head);
 
+      var questionField = el("label", "q-field");
+      questionField.appendChild(el("span", "q-label", "问题"));
       var area = el("textarea", "q-text");
       area.rows = 2;
       area.value = item.question;
       area.placeholder = "单步可答：一次筛选 + 一次聚合，或一次 groupby + 一次聚合";
-      area.addEventListener("input", function () { item.question = area.value; });
-      row.appendChild(area);
+      area.addEventListener("input", function () {
+        item.question = area.value;
+        autoSizeField(area);
+      });
+      questionField.appendChild(area);
+      row.appendChild(questionField);
 
       var foot = el("div", "q-row-foot");
-      var shapeLabel = el("label", "", "形状");
+      var shapeField = el("label", "q-field q-field-shape");
+      shapeField.appendChild(el("span", "q-label", "答案形式"));
       var select = el("select", "q-shape");
-      [["number", "number（一个数）"], ["table", "table（分组 / 排名多行）"]]
+      [["number", "单值（一个数）"], ["table", "表格（分组多行）"]]
         .forEach(function (pair) {
           var option = el("option", "", pair[1]);
           option.value = pair[0];
@@ -1155,22 +1299,30 @@
         });
       select.value = item.shape;
       select.addEventListener("change", function () { item.shape = select.value; });
-      shapeLabel.appendChild(select);
-      foot.appendChild(shapeLabel);
+      shapeField.appendChild(select);
+      foot.appendChild(shapeField);
 
-      var reasonLabel = el("label", "", "理由");
-      var reason = el("input", "q-reason");
-      reason.type = "text";
+      var reasonField = el("label", "q-field q-field-reason");
+      reasonField.appendChild(el("span", "q-label", "为什么问（理由）"));
+      var reason = el("textarea", "q-reason");
+      reason.rows = 1;
       reason.value = item.reason || "";
-      reason.placeholder = "为什么值得问（一句话）";
-      reason.addEventListener("input", function () { item.reason = reason.value; });
-      reasonLabel.appendChild(reason);
-      foot.appendChild(reasonLabel);
+      reason.placeholder = "一句话说明这个问题想回答什么";
+      reason.addEventListener("input", function () {
+        item.reason = reason.value;
+        autoSizeField(reason);
+      });
+      reasonField.appendChild(reason);
+      foot.appendChild(reasonField);
 
       row.appendChild(foot);
       qRows.appendChild(row);
+      autoSizeField(area);
+      autoSizeField(reason);
     });
     qEmpty.classList.toggle("hidden", editorQuestions.length > 0);
+    renderQuestionSummary(runCount, skipCount);
+    qRows.scrollTop = keepScroll;
   }
 
   function addQuestionRow() {
@@ -1205,6 +1357,8 @@
     questionState.changedCount = data.changed_count || 0;
     questionState.reusedCount = data.reused_count || 0;
     questionState.removedCount = data.removed_count || 0;
+    questionState.previewKept = Array.isArray(data.preview_kept) ? data.preview_kept : [];
+    questionState.previewDropped = Array.isArray(data.preview_dropped) ? data.preview_dropped : [];
     questionState.loaded = true;
     questionState.error = "";
     renderQuestionCard();
@@ -1225,7 +1379,7 @@
     }
     for (var i = 0; i < payload.length; i++) {
       if (!payload[i].question) {
-        showQMessage("第 " + (i + 1) + " 条问题不能为空。", true);
+        showQMessage((payload[i].id || ("第 " + (i + 1) + " 条")) + " 的问题不能为空。", true);
         return;
       }
       delete payload[i].index;
@@ -1663,6 +1817,89 @@
     return (map[cat] || cat || "意见") + (item.back_to ? " → " + item.back_to : "");
   }
 
+  function renderAiReview(materials) {
+    aiReviewSummary.textContent = "";
+    aiReviewIssues.textContent = "";
+    aiReviewQueries.textContent = "";
+    var qc = materials.qc || {};
+    var payload = qc.payload || {};
+    var ai = payload.ai_review || {};
+    var filtered = materials.filtered_discoveries || {};
+    var box = el("div", "section-item");
+    var verdict = payload.verdict || qc.verdict || "—";
+    box.appendChild(el("div", "sh", "自动质检：" + verdict + " " + (payload.summary || qc.summary || "")));
+    var source = payload.business_source === "ai" ? "pandasai（代码复核一致）" : "代码复核值";
+    box.appendChild(el("div", "sf", "业务取数来源：" + source));
+    var aiText = "AI 复核：";
+    if (!Object.keys(ai).length) {
+      aiText += "本轮无记录";
+    } else if (ai.skipped) {
+      aiText += "跳过（" + (ai.reason || "未返回结论") + "）";
+    } else {
+      aiText += ai.ok ? "通过" : "未通过";
+    }
+    box.appendChild(el("div", "sf", aiText));
+    var filterQ = (filtered.questions || []).length;
+    var filterF = (filtered.findings || []).length;
+    if (filterQ) {
+      var filterIds = (filtered.questions || []).map(function (item) {
+        return String((item && item.id) || "");
+      }).filter(function (id) { return id; });
+      box.appendChild(el("div", "sf",
+        "问题过滤跳过：" + filterQ + " 条"
+        + (filterIds.length ? "（" + filterIds.join("、") + "）" : "")
+        + "；已交给 AI 复核参考"));
+    }
+    if (filterF) {
+      box.appendChild(el("div", "sf",
+        "发现被正文过滤：" + filterF + " 条；已交给 AI 复核参考"));
+    }
+    aiReviewSummary.appendChild(box);
+
+    function addItems(title, items) {
+      if (!items || !items.length) return;
+      var card = el("div", "section-item");
+      card.appendChild(el("div", "sh", title));
+      items.forEach(function (text) {
+        card.appendChild(el("div", "sf", "· " + text));
+      });
+      aiReviewIssues.appendChild(card);
+    }
+    addItems("AI 复核问题", ai.issues || []);
+    addItems("AI 复核建议", ai.suggestions || []);
+
+    var queries = Array.isArray(ai.queries) ? ai.queries : [];
+    if (queries.length) {
+      var qbox = el("div", "section-item");
+      qbox.appendChild(el("div", "sh", "AI 调 pandasai 复核（" + queries.length + " 次）"));
+      queries.forEach(function (item, index) {
+        var req = item.request || {};
+        var res = item.result || {};
+        var detail = (index + 1) + ". " + (req.question || "—");
+        if (res.ok) {
+          if (res.value !== null && res.value !== undefined) detail += " → " + res.value;
+          else if (res.display) detail += " → " + res.display;
+          else if (Array.isArray(res.rows)) detail += " → " + res.rows.length + " 行";
+        } else {
+          detail += " → 失败：" + (res.error || "—");
+        }
+        qbox.appendChild(el("div", "sf", detail));
+      });
+      aiReviewQueries.appendChild(qbox);
+    }
+
+    var checks = Array.isArray(payload.checks) ? payload.checks : [];
+    if (checks.length) {
+      var cbox = el("div", "section-item");
+      cbox.appendChild(el("div", "sh", "代码质检明细"));
+      checks.forEach(function (check) {
+        cbox.appendChild(el("div", "sf",
+          (check.ok ? "通过" : "未通过") + " · " + (check.name || "") + "：" + (check.detail || "")));
+      });
+      aiReviewIssues.appendChild(cbox);
+    }
+  }
+
   function renderReview(data) {
     var status = data.status || {};
     var record = data.record || {};
@@ -1703,6 +1940,7 @@
       unconfirmedRows.appendChild(tr);
     });
     unconfirmedEmpty.classList.toggle("hidden", unconfirmed.length > 0);
+    renderAiReview(materials);
 
     var previous = materials.previous_review || null;
     previousComments.textContent = "";
@@ -2106,11 +2344,10 @@
       .finally(function () { setBusy(false); });
   }
 
-  runBtn.addEventListener("click", function () { startS5(false); });
-  fullRunBtn.addEventListener("click", function () {
+  runBtn.addEventListener("click", function () { startS5(true); });
+  incrementalRunBtn.addEventListener("click", function () {
     if (!current || gateBlocked || busy) return;
-    if (!window.confirm("全量重跑会重新执行全部问题，不复用当前结果。继续？")) return;
-    startS5(true);
+    startS5(false);
   });
 
   reloadBtn.addEventListener("click", function () { loadRuns(runSelect.value); });

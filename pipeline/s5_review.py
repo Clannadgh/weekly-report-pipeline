@@ -158,6 +158,7 @@ def _qc_info(run_dir: Path, draft: str) -> dict:
         return {
             "available": False, "stale": False, "state": "", "verdict": "",
             "summary": "", "note": "本轮没有再跑独立质检（历史质检已并入 S5）",
+            "payload": {},
         }
     try:
         current = hashlib.sha256((run_dir / "draft.md").read_bytes()).hexdigest()
@@ -173,6 +174,7 @@ def _qc_info(run_dir: Path, draft: str) -> dict:
         "summary": str(qc.get("summary") or ""),
         "note": ("质检结果与当前稿一致" if fresh
                  else "旧质检结果对应别的稿子，已失效（原质检已并入 S5）"),
+        "payload": qc if fresh else {},
     }
 
 
@@ -238,6 +240,7 @@ def build_materials(run_dir: str | Path) -> dict:
             "state": str(status.get("state") or ""),
         },
         "qc": _qc_info(folder, draft),
+        "filtered_discoveries": facts.get("filtered_discoveries") or {},
         "unconfirmed": _unconfirmed(corrected, facts),
         "figures": figures,
         "generated_at": generated_at,

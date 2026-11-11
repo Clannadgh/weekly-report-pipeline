@@ -50,6 +50,36 @@ def _norm(value: object) -> str:
     return re.sub(r"[\s\u3000]+", "", str(value or ""))
 
 
+def _s1_waivers(intake: dict) -> list[dict]:
+    """S1 人工豁免：后续阶段沿用同一条裁决，不再把它当缺口。"""
+    out: list[dict] = []
+    for waiver in intake.get("waived") or []:
+        if not isinstance(waiver, dict):
+            continue
+        reason = str(waiver.get("reason") or "").strip()
+        by = str(waiver.get("by") or "").strip()
+        at = str(waiver.get("at") or "").strip()
+        for item in waiver.get("items") or []:
+            text = str(item or "").strip()
+            if not text or text == "人工放权":
+                continue
+            out.append({"item": text, "reason": reason, "by": by, "at": at,
+                        "cards": []})
+    return out
+
+
+def _matched_waiver(entity: str, waivers: list[dict]) -> dict | None:
+    parts = [part for part in re.split(r"[、,，;；和及与\s]+", str(entity or ""))
+             if len(part) >= 2]
+    if not parts:
+        return None
+    for waiver in waivers:
+        item = _norm(waiver.get("item") or "")
+        if any(_norm(part) in item for part in parts):
+            return waiver
+    return None
+
+
 def _slug(text: str) -> str:
     if text in REGION_ABBR:
         return REGION_ABBR[text]
@@ -249,6 +279,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
     intake = json.loads(intake_path.read_text(encoding="utf-8"))
 
     result = IssuesResult()
+    result.waived = _s1_waivers(intake)
     result.run_id = str((intake.get("run") or {}).get("period_tag") or run_dir.name)
     result.week = str((intake.get("minutes") or {}).get("week") or "")
     ledger = Ledger()
@@ -299,13 +330,14 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         log.append("取数引擎 pandasai（模型 " + get_config().model + "）")
     except Exception as exc:  # noqa: BLE001
         result.state = "blocked"
-        result.message = "S3 需要 pandasai/GLM：" + str(exc)
+        result.message = "S3 需要 pandasai/模型：" + str(exc)
         _write(run_dir, result, ledger)
         return result, log
 
     issues: list[IssueItem] = []
     results: list[ResultItem] = []
     stats = ReconcileStats()
+    waived_cards = 0
 
     for card in cards_run:
         card_id = str(card.get("id") or "")
@@ -323,6 +355,14 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
 
         located = _locate_entity(frame, entity, entity_type)
         if located is None:
+            waiver = _matched_waiver(entity, result.waived)
+            if waiver is not None:
+                cards = waiver.get("cards")
+                if isinstance(cards, list):
+                    cards.append(card_id)
+                waived_cards += 1
+                log.append("S1 人工豁免，跳过：" + card_id + " " + entity)
+                continue
             stats.info += 1
             issues.append(IssueItem(
                 id="Q" + str(len(issues) + 1).zfill(2), level="信息", type="entity",
@@ -547,6 +587,7 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
         info=sum(1 for item in issues if item.level == "信息"),
         checked=len(results),
         calls=stats.calls, ok=stats.ok, parse_failed=stats.parse_failed,
+        waived=waived_cards,
     )
 
     result.issues = issues
@@ -556,6 +597,9 @@ def run_s3(run_dir: str | Path, run_root: str | Path | None = None,
     result.message = ("已核对 " + str(stats.checked) + " 条；阻断 "
                       + str(stats.blocking) + " 条、提示 " + str(stats.warn)
                       + " 条；另有 " + str(stats.info) + " 条数据说明。")
+    if stats.waived:
+        result.message += "按 S1 人工豁免跳过 " + str(stats.waived) + " 条。"
+        log.append("按 S1 人工豁免跳过 " + str(stats.waived) + " 条")
     log.append(result.message)
 
     _write(run_dir, result, ledger)

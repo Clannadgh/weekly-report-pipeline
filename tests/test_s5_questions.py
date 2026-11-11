@@ -112,6 +112,35 @@ def test_load_rejects_corrupt_or_empty_plan(tmp_path):
 
 # ---------------------------------------------------------------- 生效与脏状态
 
+def test_effective_ignores_filtered_questions(tmp_path):
+    run = tmp_path / "w99"
+    questions = [
+        {"id": "D1", "question": "深圳南山店记录行数", "shape": "number",
+         "reason": "核实重复上传"},
+        {"id": "D2", "question": "按区域分组实收金额", "shape": "table",
+         "reason": "看区域结构"},
+    ]
+    sq.filter_for_run(
+        run, questions,
+        chat_fn=lambda *args, **kwargs: {"text": json.dumps({
+            "keep": ["D2"],
+            "drop": [{"id": "D1", "why": "记录行数属于数据质量"}],
+        }, ensure_ascii=False)})
+    sq.save_plan(run, questions, source="user", run_id="w99")
+    _write(run / "s5_facts.json", {
+        "questions": [questions[1]],
+        "questions_hash": sq.questions_hash([questions[1]]),
+        "discoveries": [{"id": "D2"}],
+    })
+    data = sq.effective(run)
+    assert data["count"] == 2
+    assert data["applied"] is True
+    assert data["dirty"] is False
+    assert data["changed_ids"] == []
+    assert data["preview_kept"] == ["D2"]
+    assert [item["id"] for item in data["preview_dropped"]] == ["D1"]
+
+
 def test_effective_falls_back_to_findings(tmp_path):
     run = tmp_path / "w99"
     _facts(run, [
@@ -266,3 +295,65 @@ def test_agent_question_tool(tmp_path):
     assert reset["ok"] is True
     assert reset["source"] == "last_run"
     assert not (run / sq.PLAN_FILE).exists()
+
+
+# ---------------------------------------------------------------- AI 问题过滤
+
+def _ai_questions() -> list[dict]:
+    return [
+        {"id": "D1", "question": "深圳南山店记录行数", "shape": "number",
+         "reason": "核实重复上传规模"},
+        {"id": "D2", "question": "分区域实收金额", "shape": "table",
+         "reason": "核实区域表现"},
+        {"id": "D3", "question": "成都高新店销售数量", "shape": "number",
+         "reason": "核实七成说法"},
+    ]
+
+
+def test_filter_for_run_prefers_ai_judgment(tmp_path):
+    def chat_fn(messages, **kwargs):
+        return {"text": json.dumps({
+            "keep": ["D2", "D3"],
+            "drop": [{"id": "D1", "why": "记录行数属于数据质量"}],
+        }, ensure_ascii=False)}
+
+    kept, record = sq.filter_for_run(tmp_path, _ai_questions(), chat_fn=chat_fn)
+    assert [item["id"] for item in kept] == ["D2", "D3"]
+    assert record["source"] == "ai"
+    assert record["dropped"] == [{"id": "D1", "why": "记录行数属于数据质量",
+                                  "source": "ai"}]
+    assert (tmp_path / sq.FILTER_FILE).is_file()
+
+
+def test_filter_for_run_reuses_cached_judgment(tmp_path):
+    def chat_fn(messages, **kwargs):
+        return {"text": json.dumps({
+            "keep": ["D2", "D3"],
+            "drop": [{"id": "D1", "why": "记录行数属于数据质量"}],
+        }, ensure_ascii=False)}
+
+    sq.filter_for_run(tmp_path, _ai_questions(), chat_fn=chat_fn)
+
+    def fail_chat(*args, **kwargs):
+        raise AssertionError("缓存命中时不应再调用模型")
+
+    kept, record = sq.filter_for_run(tmp_path, _ai_questions(), chat_fn=fail_chat)
+    assert [item["id"] for item in kept] == ["D2", "D3"]
+    assert record["source"] == "cache"
+
+
+def test_filter_for_run_falls_back_to_rules(tmp_path):
+    questions = [
+        {"id": "D1", "question": "深圳南山店记录行数", "shape": "number",
+         "reason": "盘点数据质量"},
+        {"id": "D2", "question": "分区域实收金额", "shape": "table",
+         "reason": "看结构"},
+    ]
+
+    def chat_fn(messages, **kwargs):
+        return {"text": "这不是 JSON"}
+
+    kept, record = sq.filter_for_run(tmp_path, questions, chat_fn=chat_fn)
+    assert [item["id"] for item in kept] == ["D2"]
+    assert record["source"] == "rules"
+    assert record["dropped"][0]["source"] == "rules"

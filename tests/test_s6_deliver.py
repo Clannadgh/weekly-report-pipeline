@@ -141,6 +141,28 @@ def test_deliver_builds_complete_package(tmp_path):
     assert status["version"] == "v1"
 
 
+def test_waiver_is_archived_with_package(tmp_path):
+    run = _make_run(tmp_path / "w99")
+    intake = json.loads((run / "intake.json").read_text(encoding="utf-8"))
+    waiver = {
+        "at": "2026-11-11T09:03:51", "by": "用户",
+        "items": ["纪要提到的渠道「商场店、街边店、社区店、写字楼店」在数据列「渠道」里不存在"],
+        "reason": "渠道只是概述",
+    }
+    _write(run / "waiver.json", waiver)
+    intake["waived"] = [waiver]
+    _write(run / "intake.json", intake)
+
+    out = delivery.deliver(run, use_ai=False)
+    assert out.ok, out.message
+    assert "人工豁免" in out.message
+    pkg = Path(out.path)
+    assert (pkg / "waiver.json").is_file()
+    manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["waivers"][0]["reason"] == "渠道只是概述"
+    assert manifest["middleware"]["waiver.json"]
+
+
 def test_signature_is_recorded(tmp_path):
     run = _make_run(tmp_path / "w99")
     out = delivery.deliver(run, use_ai=False, signature="王五")

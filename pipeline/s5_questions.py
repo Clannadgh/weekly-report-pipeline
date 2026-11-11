@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 
 PLAN_FILE = "s5_questions.json"
+FILTER_FILE = "s5_question_filter.json"
+FILTER_VERSION = 1
 MAX_QUESTIONS = 12
 _SHAPES = ("number", "table")
 _WS_RE = re.compile(r"[\s\u3000\ufeff]+")
@@ -190,6 +192,219 @@ def diff_questions(new_questions: list[dict],
     }
 
 
+def _question_key(item: dict) -> str:
+    """过滤缓存的键：编号 + 问句 + 形状。只改理由不重新判断。"""
+    text = "|".join((str(item.get("id") or ""),
+                     _clean(item.get("question")),
+                     str(item.get("shape") or "number")))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _json_object(text: str) -> dict:
+    body = str(text or "").strip()
+    fence = chr(96) * 3
+    if body.startswith(fence):
+        body = body[len(fence):]
+        body = re.sub(r"^[a-zA-Z]*\s*", "", body)
+        if body.rstrip().endswith(fence):
+            body = body.rstrip()[:-len(fence)]
+    start, end = body.find("{"), body.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("模型没有返回 JSON 对象")
+    data = json.loads(body[start:end + 1])
+    if not isinstance(data, dict):
+        raise ValueError("模型返回的不是 JSON 对象")
+    return data
+
+
+def _filter_prompt(questions: list[dict]) -> str:
+    payload = [{"id": str(item.get("id") or ""),
+                "question": str(item.get("question") or ""),
+                "shape": str(item.get("shape") or "number"),
+                "reason": str(item.get("reason") or "")}
+               for item in questions]
+    return (
+        "你是经营周报的选题审稿人。只判断问题是否值得执行并写入经营周报，不要改写问题。\n"
+        "保留：能形成经营结论的问题（实收、销量、毛利、区域 / 门店 / 品类 / 渠道表现、"
+        "活动效果、排名、结构等）。\n"
+        "跳过：纯数据质量盘点（记录行数、去重 / 重复、缺失 / 空值、负数 / 冲销、"
+        "POS 故障、上传核对等），或答案只能是「待核实 / 疑似 / 可能」、"
+        "无法形成经营结论的问题。\n"
+        "注意：理由里出现「核实 / 是否一致」不构成跳过理由，要看问题本身要回答什么。\n"
+        "输出严格 JSON："
+        '{"keep":["D4"],"drop":[{"id":"D1","why":"记录行数属于数据质量"}]}\n'
+        "每个输入问题必须且只能出现在 keep 或 drop 之一。不要输出其他内容。\n\n"
+        "输入：\n" + json.dumps(payload, ensure_ascii=False, indent=1)
+    )
+
+
+def _ask_filter_model(questions: list[dict], chat_fn=None) -> dict[str, dict]:
+    if chat_fn is None:
+        from .llm import chat as chat_fn  # noqa: PLC0415 - 延迟导入
+
+    messages = [
+        {"role": "system", "content": "你是经营周报的选题审稿人，只输出 JSON。"},
+        {"role": "user", "content": _filter_prompt(questions)},
+    ]
+    try:
+        result = chat_fn(messages, temperature=0, max_tokens=1200,
+                         timeout=90, thinking="disabled")
+    except TypeError:
+        result = chat_fn(messages, temperature=0, max_tokens=1200, timeout=90)
+    text = result.get("text") if isinstance(result, dict) else str(result or "")
+    data = _json_object(text)
+
+    raw_keep = data.get("keep")
+    raw_drop = data.get("drop")
+    if not isinstance(raw_keep, list) or not isinstance(raw_drop, list):
+        raise ValueError("过滤结果缺少 keep / drop 数组")
+    keep: list[str] = []
+    for value in raw_keep:
+        qid = _clean_id(value)
+        if not qid or qid in keep:
+            raise ValueError("keep 里有空编号或重复编号")
+        keep.append(qid)
+    drop: dict[str, str] = {}
+    for value in raw_drop:
+        if isinstance(value, dict):
+            qid = _clean_id(value.get("id"))
+            why = _clean(value.get("why"))
+        else:
+            qid, why = _clean_id(value), ""
+        if not qid or qid in drop or qid in keep:
+            raise ValueError("drop 里有空编号、重复编号或与 keep 冲突")
+        drop[qid] = why
+
+    known = {str(item.get("id") or "") for item in questions}
+    if set(keep) | set(drop) != known:
+        raise ValueError("过滤结果没有覆盖全部问题")
+    decisions = {qid: {"keep": True, "why": ""} for qid in keep}
+    decisions.update({qid: {"keep": False, "why": why or "不适合写进周报"}
+                      for qid, why in drop.items()})
+    return decisions
+
+
+def _load_filter_cache(run_dir: str | Path) -> dict[str, dict]:
+    data = _read_json(Path(run_dir) / FILTER_FILE)
+    if int(data.get("version") or 0) != FILTER_VERSION:
+        return {}
+    raw = data.get("decisions")
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): value for key, value in raw.items() if isinstance(value, dict)}
+
+
+def _save_filter_cache(run_dir: str | Path, decisions: dict[str, dict]) -> None:
+    path = Path(run_dir) / FILTER_FILE
+    items = list(decisions.items())[-100:]
+    doc = {
+        "version": FILTER_VERSION,
+        "updated_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "decisions": dict(items),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def filter_for_run(run_dir: str | Path, questions: Any, *,
+                   chat_fn=None, log: list[str] | None = None
+                   ) -> tuple[list[dict], dict]:
+    """AI 判断哪些问题值得写进周报；失败或返回不合法时回退词表过滤。
+
+    判断结果按「编号 + 问句 + 形状」缓存，重跑同一份清单不会漂移；
+    只改理由（例如删掉「核实」）不会触发重新判断。
+    """
+    log = log if log is not None else []
+    normalized = normalize_questions(questions, strict=False, max_count=MAX_QUESTIONS)
+    if not normalized:
+        return [], {"source": "none", "kept": [], "dropped": [], "decisions": []}
+
+    cache = _load_filter_cache(run_dir)
+    decisions: dict[str, dict] = {}
+    misses: list[dict] = []
+    for item in normalized:
+        key = _question_key(item)
+        hit = cache.get(key)
+        if isinstance(hit, dict) and str(hit.get("id") or "") == str(item.get("id") or ""):
+            decisions[key] = {
+                "id": str(item.get("id") or ""),
+                "keep": bool(hit.get("keep")),
+                "why": str(hit.get("why") or ""),
+                "source": "cache",
+            }
+        else:
+            misses.append(item)
+
+    if misses:
+        try:
+            judged = _ask_filter_model(misses, chat_fn)
+            for item in misses:
+                qid = str(item.get("id") or "")
+                verdict = judged[qid]
+                decisions[_question_key(item)] = {
+                    "id": qid,
+                    "keep": bool(verdict["keep"]),
+                    "why": str(verdict.get("why") or ""),
+                    "source": "ai",
+                }
+            log.append("AI 问题过滤：判断 " + str(len(misses)) + " 条")
+        except Exception as exc:  # noqa: BLE001 - 过滤失败回退词表
+            log.append("AI 问题过滤失败，回退词表：" + str(exc)[:120])
+            from . import s5_filters  # noqa: PLC0415 - 避免循环导入
+            kept, dropped = s5_filters.filter_questions(misses)
+            dropped_ids = {str(qid) for qid in dropped}
+            for item in misses:
+                qid = str(item.get("id") or "")
+                keep = qid not in dropped_ids
+                decisions[_question_key(item)] = {
+                    "id": qid,
+                    "keep": keep,
+                    "why": "" if keep else "命中数据质量 / 核实词表",
+                    "source": "rules",
+                }
+            log.append("词表问题过滤：判断 " + str(len(misses)) + " 条")
+
+    kept_questions: list[dict] = []
+    dropped_items: list[dict] = []
+    ordered_decisions: list[dict] = []
+    for item in normalized:
+        entry = decisions[_question_key(item)]
+        ordered_decisions.append({"id": entry["id"], "keep": entry["keep"],
+                                  "why": entry["why"], "source": entry["source"]})
+        if entry["keep"]:
+            kept_questions.append(item)
+        else:
+            dropped_items.append({"id": entry["id"], "why": entry["why"],
+                                  "source": entry["source"]})
+    sources = {entry["source"] for entry in decisions.values()}
+    if not sources:
+        source = "none"
+    elif len(sources) == 1:
+        source = next(iter(sources))
+    else:
+        source = "mixed"
+    record = {
+        "version": FILTER_VERSION,
+        "source": source,
+        "at": dt.datetime.now().isoformat(timespec="seconds"),
+        "kept": [str(item.get("id") or "") for item in kept_questions],
+        "dropped": dropped_items,
+        "decisions": ordered_decisions,
+    }
+    if any(entry["source"] == "ai" for entry in decisions.values()):
+        ai_only = {key: value for key, value in decisions.items()
+                   if value["source"] == "ai"}
+        merged = dict(cache)
+        merged.update(ai_only)
+        try:
+            _save_filter_cache(run_dir, merged)
+        except Exception as exc:  # noqa: BLE001 - 缓存失败不影响本次过滤
+            log.append("问题过滤缓存写入失败：" + str(exc)[:80])
+    return kept_questions, record
+
+
 def _read_json(path: Path) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -270,19 +485,62 @@ def _facts_hash(run_dir: Path) -> str:
     return questions_hash(questions) if questions else ""
 
 
+def _preview_filter(folder: Path, questions: list[dict]
+                    ) -> tuple[list[dict], list[dict]]:
+    """预览这次实际会执行的问题：命中过滤缓存就按缓存，否则按词表兜底。
+
+    只用于展示，不调模型；新问题按词表保守判断。返回 (保留, 跳过)。
+    """
+    from . import s5_filters  # noqa: PLC0415 - 与 filter_for_run 保持一致
+
+    cache = _load_filter_cache(folder)
+    kept: list[dict] = []
+    dropped: list[dict] = []
+    for item in questions:
+        qid = str(item.get("id") or "")
+        hit = cache.get(_question_key(item))
+        if isinstance(hit, dict) and str(hit.get("id") or "") == qid:
+            if hit.get("keep"):
+                kept.append(item)
+            else:
+                dropped.append({
+                    "id": qid,
+                    "why": str(hit.get("why") or "不适合写进周报"),
+                    "source": str(hit.get("source") or "ai"),
+                })
+            continue
+        kept_word, _ = s5_filters.filter_questions([item])
+        if kept_word:
+            kept.append(item)
+        else:
+            dropped.append({
+                "id": qid,
+                "why": "命中数据质量 / 核实词表",
+                "source": "rules",
+            })
+    return kept, dropped
+
+
+def _preview_questions(folder: Path, questions: list[dict]) -> list[dict]:
+    kept, _ = _preview_filter(folder, questions)
+    return kept
+
+
 def effective(run_dir: str | Path) -> dict:
     """当前生效的问题清单：优先 s5_questions.json，其次上一稿的 discoveries。
 
     返回 questions / source(saved|last_run|none) / updated_at / count /
     dirty（清单与当前稿不一致）/ applied（当前稿就是用这份清单生成的）。
+    被问题过滤跳过的问题不算改动。
     """
     folder = Path(run_dir)
     plan = load_plan(folder)
     if plan is not None:
-        current_hash = questions_hash(plan["questions"])
+        active, preview_dropped = _preview_filter(folder, plan["questions"])
+        active_hash = questions_hash(active)
         facts_hash = _facts_hash(folder)
-        applied = bool(facts_hash) and facts_hash == current_hash
-        diff = diff_questions(plan["questions"], _facts_plan_questions(folder))
+        applied = bool(facts_hash) and facts_hash == active_hash
+        diff = diff_questions(active, _facts_plan_questions(folder))
         return {
             "questions": plan["questions"],
             "source": "saved",
@@ -290,6 +548,8 @@ def effective(run_dir: str | Path) -> dict:
             "count": len(plan["questions"]),
             "dirty": bool(facts_hash) and not applied,
             "applied": applied,
+            "preview_kept": [str(item.get("id") or "") for item in active],
+            "preview_dropped": preview_dropped,
             "changed_ids": diff["changed_ids"],
             "reused_ids": diff["reused_ids"],
             "removed_ids": diff["removed_ids"],
@@ -302,6 +562,8 @@ def effective(run_dir: str | Path) -> dict:
     base = {
         "questions": questions,
         "updated_at": "",
+        "preview_kept": [str(item.get("id") or "") for item in questions],
+        "preview_dropped": [],
         "dirty": False,
         "changed_ids": [],
         "reused_ids": [],

@@ -38,7 +38,7 @@ from .models import (
     StatusHistory,
 )
 from .period import iso_week_tag, parse_period, parse_week, parse_year, shift_days, week_label
-from .readers import column_dtypes, read_file, read_key_values, read_text
+from .readers import column_dtypes, load_tables, read_file, read_key_values, read_text
 
 _TEXT_FORMATS = ("md", "txt", "docx", "markdown")
 
@@ -93,12 +93,14 @@ def _split_range(text: str) -> tuple[date, date] | None:
 
 
 def _pick(columns: list[str], hints: tuple[str, ...], exclude: tuple[str, ...] = ()) -> str:
-    for col in columns:
-        low = col.lower()
-        if any(token in low for token in exclude):
-            continue
-        if any(hint.lower() in low for hint in hints):
-            return col
+    # 先按 hint 的优先级找，避免「原价金额」抢在「实收金额」前面
+    for hint in hints:
+        for col in columns:
+            low = col.lower()
+            if any(token in low for token in exclude):
+                continue
+            if hint.lower() in low:
+                return col
     return ""
 
 
@@ -242,6 +244,25 @@ def _collect_entities(data_recs: list[tuple[Path, FileInfo]], text: str):
 
 # ---------------------------------------------------------------- 需求矩阵
 
+def _target_sheet(data_recs: list[tuple[Path, FileInfo]]) -> tuple[bool, str]:
+    """找 xlsx 里的「销售目标」工作表；找不到返回 (False, "")。"""
+    for path, info in data_recs:
+        if info.format not in ("xlsx", "xlsm"):
+            continue
+        if "销售目标" not in (info.sheets or []):
+            continue
+        try:
+            for name, frame in load_tables(path):
+                if name != "销售目标":
+                    continue
+                columns = {str(col) for col in frame.columns}
+                if "区域" in columns and ({"实收目标(元)", "目标金额"} & columns):
+                    return True, path.name + "「销售目标」工作表"
+        except Exception:
+            continue
+    return False, ""
+
+
 def _build_requirements(
     data_recs: list[tuple[Path, FileInfo]],
     metrics: list[str],
@@ -259,6 +280,7 @@ def _build_requirements(
     cost = _pick(columns, _COST_HINTS)
     gross = _pick(columns, _GROSS_HINTS)
     target = _pick(columns, _TARGET_HINTS)
+    target_sheet, target_sheet_label = _target_sheet(data_recs)
     quantity = _pick(columns, _QTY_HINTS)
     returns = _pick(columns, _RETURN_HINTS)
     channel = _pick(columns, _CHANNEL_HINTS)
@@ -358,24 +380,31 @@ def _build_requirements(
             ["目标列（目标/达成/target）", "金额列"],
             "have", f"{brief}；目标列「{target}」，金额列「{amount}」",
             impact="用于第 2 节核心指标表")
+    elif target_sheet and amount:
+        add("目标达成率", "核心",
+            ["销售目标表（区域 + 周次 + 实收目标）", "金额列"],
+            "have", f"{brief}；{target_sheet_label}含区域周目标，金额列「{amount}」",
+            impact="用于第 2 节核心指标表目标达成率")
     elif amount:
         add("目标达成率", "核心",
-            ["目标列（目标/达成/target）", "金额列"],
-            "degrade", f"{brief}；金额列「{amount}」，无目标列",
-            impact="达成率一列改为较上周环比呈现，目标缺口无法量化",
-            note="无目标列，目标达成率改用「较上周」代替，第 2 节表头标注「（无目标，改列较上周）」")
+            ["销售目标表（区域 + 周次 + 实收目标）", "金额列"],
+            "missing", f"{brief}；金额列「{amount}」，未找到目标列或销售目标工作表",
+            impact="第 2 节核心指标表目标达成率一列无法出数",
+            how="补充 xlsx 的「销售目标」工作表（区域、周次、实收目标），"
+                "或提供含目标金额列的数据文件")
     elif target:
         add("目标达成率", "核心",
             ["目标列（目标/达成/target）", "金额列"],
-            "degrade", f"{brief}；目标列「{target}」，无金额列",
+            "missing", f"{brief}；目标列「{target}」，无金额列",
             impact="只能列目标值，无法计算达成率",
-            note="有目标列但无实收金额列，达成率留空，仅报目标值")
+            how="补充实收金额列，才能计算目标达成率")
     else:
         add("目标达成率", "核心",
             ["目标列（目标/达成/target）", "金额列"],
             "missing", f"{brief}；共 {len(columns)} 列，无目标/达成列",
             impact="第 2 节核心指标表目标达成率一列无法出数",
-            how="补充目标金额列")
+            how="补充 xlsx 的「销售目标」工作表（区域、周次、实收目标），"
+                "或提供含目标金额列的数据文件")
 
     # 5 补充项（来自纪要）
     if "数量" in metrics:
@@ -588,7 +617,7 @@ def _archive_attempt(run_dir: Path, log: list[str]) -> None:
         log.append("归档上一次运行失败：" + str(exc))
 
 
-def _choose_run_dir(run_root: Path, tag: str) -> Path:
+def _choose_run_dir(run_root: Path, tag: str, fresh: bool = False) -> Path:
     index = 1
     candidate = run_root / tag
     while candidate.exists():
@@ -599,11 +628,24 @@ def _choose_run_dir(run_root: Path, tag: str) -> Path:
                 state = str(json.loads(status_file.read_text(encoding="utf-8")).get("state", ""))
             except (OSError, ValueError):
                 state = ""
-        if state != "已交付":
+        if state != "已交付" and not fresh:
             break
         index += 1
         candidate = run_root / f"{tag}-{index}"
     return candidate
+
+
+def _resolve_run_dir(run_root: Path, name: str) -> Path | None:
+    """把会话记住的运行目录名（w44 / w44-2）解析成 run_root 下的直接子目录。"""
+    raw = str(name or "").strip().replace("\\", "/")
+    if raw.startswith("runs/"):
+        raw = raw[len("runs/"):]
+    raw = raw.strip("/")
+    if not raw or "/" in raw or raw in (".", "..") or raw.startswith(".."):
+        return None
+    root = Path(run_root).resolve()
+    folder = (root / raw).resolve()
+    return folder if folder.parent == root else None
 
 
 def _relative_dir(path: Path) -> str:
@@ -782,6 +824,8 @@ def run_intake(
     spec_path: Path | None = None,
     use_ai: bool | None = None,
     progress: "Callable[[int, str, str], None] | None" = None,
+    fresh_run: bool = False,
+    reuse_run_dir: str | Path | None = None,
 ) -> tuple[IntakeResult, Status, list[str]]:
     log: list[str] = []
 
@@ -949,8 +993,9 @@ def run_intake(
     run_dir: Path | None = None
     if minutes.period_start:
         tag = iso_week_tag(date.fromisoformat(minutes.period_start))
-        run_dir = _choose_run_dir(run_root, tag)
-        run.period_tag = tag
+        reuse = _resolve_run_dir(run_root, str(reuse_run_dir)) if reuse_run_dir else None
+        run_dir = reuse if reuse is not None else _choose_run_dir(run_root, tag, fresh=fresh_run)
+        run.period_tag = run_dir.name
         run.dir = _relative_dir(run_dir)
         log.append(f"周期标识 {tag}，运行目录 {run.dir}")
 
@@ -989,7 +1034,7 @@ def run_intake(
             if not _rules_allowed():
                 ai_blocker = "AI 映射失败：" + str(exc)
     elif not ai_enabled and not _rules_allowed() and run_dir is not None:
-        ai_blocker = "AI 映射未启用（检查 GLM_API_KEY 或 S1_USE_AI）"
+        ai_blocker = "AI 映射未启用（检查模型配置或 S1_USE_AI）"
 
     if domain is not None and domain.metrics:
         requirements, missing, degrade = _requirements_from_map(domain, data_recs)
@@ -1118,7 +1163,11 @@ def run_intake(
     if core_missing:
         blocked_items.append("核心指标缺 " + "、".join(r.item for r in core_missing))
         for item in core_missing:
-            questions.append(f"核心指标「{item.item}」缺数据：{item.evidence}，请补充所需列后重跑 S1。")
+            hint = next((entry.how for entry in missing
+                         if entry.what == item.item and entry.how), "")
+            questions.append(
+                f"核心指标「{item.item}」缺数据：{item.evidence}；"
+                f"{hint or '请补充所需列'}，然后重跑 S1。")
     if consistency.conflicts:
         blocked_items.append(f"一致性冲突 {len(consistency.conflicts)} 项")
         for conflict in consistency.conflicts:
@@ -1136,6 +1185,9 @@ def run_intake(
                 questions.append(f"{'、'.join(duplicate.files)}：{duplicate.note}，请确认保留哪份。")
     if not coverage.covers_prompt_scope and merged is not None:
         blocked_items.append("数据覆盖未包含提示周期")
+        pause_reasons.append(
+            f"数据只覆盖 {coverage.merged_start} 至 {coverage.merged_end}，"
+            "未包含提示周期")
         questions.append(
             f"数据合并覆盖 {coverage.merged_start} 至 {coverage.merged_end}，"
             f"未覆盖提示词或纪要的周期，请补充对应周期数据。"

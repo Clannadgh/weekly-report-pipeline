@@ -373,6 +373,8 @@
   .headlink a.ghostlink { background: #fff; color: var(--text); border: 1px solid #c3ccd6; }
   .headlink a:hover { filter: brightness(.96); }
 </style>
+<link rel="stylesheet" href="/static/model-settings.css">
+<script src="/static/model-settings.js" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -404,10 +406,10 @@
     <div class="llm-card">
       <div class="llm-head">
         <span class="dot idle" id="llmDot"></span>
-        <span>模型 <b id="llmModel">glm-5.3-flash</b></span>
+        <span>模型 <b id="llmModel">加载中…</b></span>
         <button id="llmBtn" class="ghost small" type="button">测试连接</button>
       </div>
-      <p class="empty-note" id="llmMsg">使用 .env 里的 GLM_API_KEY</p>
+      <p class="empty-note" id="llmMsg">点顶栏「模型」配置供应商</p>
     </div>
   </section>
 
@@ -763,7 +765,7 @@
     .then(function (resp) { return resp.json(); })
     .then(function (data) {
       llmModel.textContent = data.model || "未配置";
-      if (!data.configured) { setLlm("bad", data.error || "未找到 GLM_API_KEY"); return; }
+      if (!data.configured) { setLlm("bad", data.error || "未配置模型：点顶栏「模型」添加供应商"); return; }
       setLlm("idle", "密钥已加载，点右侧测试连接");
     })
     .catch(function (err) { setLlm("bad", "读取配置失败：" + err.message); });

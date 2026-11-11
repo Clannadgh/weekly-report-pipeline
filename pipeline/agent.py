@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
+import math
+import time
 import uuid
 from pathlib import Path
 
@@ -91,8 +94,8 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
     - 用户说的口径要原样落到 question 里，不要自己改条件；拿不准形状就问，不要猜。
     - 改完只是保存清单，不要声称已经重新扩写；告诉用户「重新扩写后生效」，
       用户同意后再调 run_s5。reset 表示恢复自动出题。
-    - run_s5 默认增量：只重算新增 / 改动的问题，没改的复用当前稿结果；
-      用户明确说「全部重跑 / 全量重跑」时才传 full=true。
+    - run_s5 默认全量重跑，不复用上一稿结果；
+      只有用户明确说「只重算改动的问题 / 增量」时才传 full=false。
     - 不要自己编造数据结果，也不要改 draft.md / ledger.json。
 26. S5 扩写完成会自动送审，没有单独送审工具。
     - S5 返回 待审核 后，告诉用户打开 /s5.html 的审核台，由审核人填写签名并点「签名确认审核」
@@ -113,7 +116,38 @@ SYSTEM = """你是「经营周报助手」，负责和用户对话，并通过�
     - 用户问交付进度、第几版、文件在哪时调 get_delivery，给版本号、指纹前 12 位、文件数、审核人。
       交付在 /s6.html 的第六步页面完成，审核签名已在 S5 记录；下载链接用工具返回的地址，不要自己拼路径。
     - 原质检已并入 S5；没有独立质检结论时如实说「本轮无独立质检」，不要说成 PASS。
+28. 任何阶段工具（run_s1–run_s6）返回 ok=false 时，只把 message / error 原样转述给用户并停下；
+    同一轮里不得自动重跑该阶段，也不得为了重跑去改问题清单或调其他工具。
+    S5 质检未通过时按第 29 条走定点修改，不要重跑 run_s5。
+29. run_s5 返回 ok=false 且 fixable=true 时，先问用户、再由用户定夺，不要替用户选口径：
+    - 先把 qc.ai_review.issues 用大白话逐条列出来，每条给出可选方案（用哪个数、保留还是改写）；
+      对话里没有正文原文时先调 get_s5_draft 拿 draft、qc 和 ledger_hints；
+    - 用户选定后调 fix_s5。edits 的 find 必须照抄 draft 里的原文，replace 只能写
+      用户确认的文本或工具返回的数字；骨架原句用户选择保留时，把「骨架原句逐字保留，视为纪要原文」
+      写进 waivers；改了台账里的数字时同时传 ledger_updates，key 用 ledger_hints 里的 key；
+    - 用户说某一条复核问题是误判时，先把该条原文复述给用户确认；确认后只把这一条放进
+      waive_issues（match 引用该条里的原句或关键词，reason 写用户理由），不要把其他问题一起豁免；
+      代码质检的问题不能这样豁免，只有 AI 复核的具体条目可以；
+    - fix_s5 通过后告诉用户「待审核」，仍未通过就把剩余 issues 再列给用户，继续等用户定夺；
+    - 不要自己宣布通过，不要重跑 run_s5，也不要因为质检失败就改问题清单重取数。
+30. 用户问数据表里的内容（前几行、某列取值、筛选明细、某条件下汇总、排名）时，调用 ask_data 取数：
+    - 只看原始数据前 N 行：传 preview=N（1–20），不要传 question；
+    - 要计算 / 分组 / 筛选：传 question 和 shape（一个数=number，明细或多行=table），
+      question 里写清表名、列名、日期范围和判断条件，只问一个单步问题；
+    - 只转述工具返回的 rows / value / raw，表格照抄关键列，数字不要自己再算或换算单位；
+      不要用 intake.json 的文件概要冒充数据内容，也不要说「请自己打开文件查看」；
+    - 返回 tables 有多个表时，按 name 指明查的是哪张表；工具返回 ok=false 或空结果时如实说明，
+      不要编造数据行。
 """
+
+STAGE_TOOLS = {
+    "run_s1": "S1 准入",
+    "run_s2": "S2 拆卡",
+    "run_s3": "S3 对账",
+    "run_s4": "S4 修纪要",
+    "run_s5": "S5 扩写审核",
+    "run_s6": "S6 交付",
+}
 
 TOOLS = [
     {
@@ -144,6 +178,30 @@ TOOLS = [
                     "section": {"type": "string"},
                 },
                 "required": ["run_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_data",
+            "description": ("直接查询本次运行的源数据表：preview 查看原始前 N 行；"
+                            "question 交给 pandasai 生成并执行 pandas 代码取数，"
+                            "返回结果、代码和代码指纹。用户问数据里有什么、前几行、"
+                            "某列取值、筛选明细、按门店/品类汇总时调用。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "preview": {"type": "integer",
+                                "description": "只查看原始数据前 N 行（1–20），不调模型"},
+                    "question": {"type": "string",
+                                 "description": "单步可答的取数问题，写清表、列、日期范围和筛选条件"},
+                    "shape": {"type": "string", "enum": ["number", "table"],
+                              "description": "number=一个数；table=明细或多行（默认 table）"},
+                    "run_id": {"type": "string",
+                               "description": "要查哪次运行的数据；不传就用本次会话最近一次运行"},
+                },
+                "required": [],
             },
         },
     },
@@ -183,7 +241,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "full": {"type": "boolean",
-                             "description": "true=全量重跑；默认 false，只重算改动的问题"},
+                             "description": "true=全量重跑（默认）；false=只重算改动的问题"},
                 },
             },
         },
@@ -215,6 +273,89 @@ TOOLS = [
                                "description": "为什么值得问（一句话）"},
                 },
                 "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_s5_draft",
+            "description": ("只读读取当前 S5 正文、最近一次质检问题与正文涉及的台账数字。"
+                            "用户要按质检意见改稿、但当前对话里没有正文原文时，先调它拿原文，"
+                            "再问用户怎么改；它不改稿、不重跑 S5。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string",
+                               "description": "运行编号；不传用本次会话最近一次运行"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fix_s5",
+            "description": ("S5 质检未通过时，按用户定夺的结果定点修改当前稿，并只重跑质检和复核，"
+                            "不重跑扩写、不出图、不重新取数。"
+                            "edits 是逐条精确替换：find 必须与 draft_excerpt 里的原文完全一致，"
+                            "replace 是用户确认后的文本；找不到原文时整批不生效。"
+                            "waivers 写用户已确认、复核不得再作为不通过理由的事项。"
+                            "waive_issues 只豁免用户点名的单条 AI 复核问题，代码质检不受影响。"
+                            "只有在用户明确选定方案后才能调用；不得自己替用户定口径。"
+                            "通过后状态变为待审核；仍未通过则返回剩余问题。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string",
+                               "description": "运行编号；不传用本次会话最近一次运行"},
+                    "edits": {
+                        "type": "array",
+                        "description": "精确文本替换列表",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "find": {"type": "string", "description": "draft.md 里的原文"},
+                                "replace": {"type": "string", "description": "用户确认后的新文本"},
+                            },
+                            "required": ["find", "replace"],
+                        },
+                    },
+                    "waivers": {
+                        "type": "array",
+                        "description": "用户确认、复核不得再作为不通过理由的事项",
+                        "items": {"type": "string"},
+                    },
+                    "waive_issues": {
+                        "type": "array",
+                        "description": ("用户判定为误判的单条 AI 复核问题；只豁免列出的条目，"
+                                        "代码质检和其他复核问题仍照常拦截"),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "match": {"type": "string",
+                                          "description": "该条复核问题里的原句或关键词"},
+                                "reason": {"type": "string",
+                                           "description": "用户为什么认为是误判"},
+                            },
+                            "required": ["match"],
+                        },
+                    },
+                    "ledger_updates": {
+                        "type": "array",
+                        "description": "改了数字时同步台账；key 来自 ledger_hints",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {"type": "string"},
+                                "value": {"type": "number"},
+                                "display": {"type": "string"},
+                                "note": {"type": "string"},
+                            },
+                            "required": ["key"],
+                        },
+                    },
+                },
             },
         },
     },
@@ -347,6 +488,106 @@ def _read_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+TABLE_SUFFIXES = {".csv", ".tsv", ".xlsx", ".xlsm", ".parquet"}
+
+
+def _json_cell(value):
+    """把 DataFrame 单元格转成可 JSON 的值：时间转 ISO，NaN 转 None。"""
+    if value is None:
+        return None
+    try:
+        import pandas as pd
+
+        if isinstance(value, pd.Timestamp):
+            return value.isoformat()
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (dt.datetime, dt.date)):
+        return value.isoformat()
+    if hasattr(value, "item"):
+        try:
+            value = value.item()
+        except (AttributeError, ValueError):
+            pass
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _preview_rows(frame, limit: int) -> list[dict]:
+    return [{str(col): _json_cell(val) for col, val in row.items()}
+            for row in frame.head(limit).to_dict(orient="records")]
+
+
+def _load_query_frames(paths: list[Path]) -> tuple[dict, list[dict]]:
+    """读数据文件并按列结构合并；主表叫 df_sales，其余 df_data2、df_data3……"""
+    import pandas as pd
+
+    from .readers import load_tables
+
+    groups: list[dict] = []
+    for path in paths:
+        for sheet, frame in load_tables(path):
+            if frame is None or not len(frame.columns):
+                continue
+            frame = frame.copy()
+            frame.columns = [str(col).replace("\ufeff", "").strip()
+                             for col in frame.columns]
+            columns = tuple(frame.columns)
+            source = path.name + ("/" + sheet if sheet else "")
+            for group in groups:
+                if group["columns"] == columns:
+                    group["frame"] = pd.concat([group["frame"], frame],
+                                               ignore_index=True)
+                    group["sources"].append(source)
+                    break
+            else:
+                groups.append({"columns": columns, "frame": frame,
+                               "sources": [source]})
+    if not groups:
+        raise ValueError("文件里没有可读的数据表")
+
+    groups.sort(key=lambda item: len(item["frame"]), reverse=True)
+    frames: dict = {}
+    tables: list[dict] = []
+    for index, group in enumerate(groups):
+        name = "df_sales" if index == 0 else "df_data" + str(index + 1)
+        frames[name] = group["frame"]
+        tables.append({
+            "name": name,
+            "rows": int(len(group["frame"])),
+            "columns": [str(col) for col in group["columns"]],
+            "source": "、".join(group["sources"]),
+        })
+    return frames, tables
+
+
+def _make_data_qa(frames: dict):
+    from .pandasai_glm import make_qa
+
+    return make_qa(frames, max_retries=1)
+
+
+def _ledger_hints(folder: Path, draft: str) -> list[dict]:
+    """正文里出现的台账数字，供定点改稿时同步台账。"""
+    ledger = _read_json(folder / "ledger.json")
+    hints = []
+    for entry in ledger.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        display = str(entry.get("display") or "")
+        if display and display in draft:
+            hints.append({"key": entry.get("key") or "",
+                          "card": entry.get("card") or "",
+                          "value": entry.get("value"),
+                          "display": display})
+    return hints[:12]
 
 
 def _blocking_ids(folder: Path) -> list[str]:
@@ -570,9 +811,16 @@ class Session:
             if detail:
                 self.progress["detail"] = detail
 
+        reuse_dir = ""
+        if self.last_run:
+            folder = Path(self.run_root) / self.last_run
+            status = _read_json(folder / "status.json")
+            if folder.is_dir() and str(status.get("state") or "") != "已交付":
+                reuse_dir = self.last_run
         result, _status, _log = run_intake(
             files=self.files, prompt=prompt, run_root=self.run_root,
-            spec_path=self.spec_path, progress=on_progress)
+            spec_path=self.spec_path, progress=on_progress,
+            fresh_run=not reuse_dir, reuse_run_dir=reuse_dir or None)
         self.progress["finished"] = True
         intake = result.model_dump()
         self.last_run = (intake.get("run") or {}).get("period_tag") or ""
@@ -600,6 +848,126 @@ class Session:
             return {"ok": True, "run_id": run_id,
                     "requirements": intake.get("requirements") or []}
         return {"ok": False, "error": "未知 section：" + section}
+
+    def _data_files_for_run(self, run_id: str) -> list[Path]:
+        folder = self.run_root / run_id
+        intake = _read_json(folder / "intake.json")
+        files: list[Path] = []
+        for info in intake.get("files") or []:
+            if not isinstance(info, dict) or info.get("role") != "数据":
+                continue
+            candidates = [
+                folder / str(info.get("path") or ""),
+                folder / "inputs" / str(info.get("name") or ""),
+            ]
+            path = next((item for item in candidates if item.is_file()), None)
+            if path is not None:
+                files.append(path)
+        if files:
+            return files
+        inputs = folder / "inputs"
+        if inputs.is_dir():
+            return [path for path in sorted(inputs.iterdir())
+                    if path.is_file() and path.suffix.lower() in TABLE_SUFFIXES]
+        return []
+
+    def _ask_data(self, args: dict) -> dict:
+        """query the run's source tables: preview rows or ask pandasai."""
+        question = str(args.get("question") or "").strip()[:800]
+        try:
+            preview = int(args.get("preview") or 0)
+        except (TypeError, ValueError):
+            preview = 0
+        preview = max(0, min(preview, 20))
+        if not preview and not question:
+            return {"ok": False,
+                    "error": "请传 question（取数问题）或 preview（查看前 N 行）。"}
+
+        requested = str(args.get("run_id") or "").strip()
+        run_id = requested or self.last_run
+        files: list[Path] = []
+        if run_id:
+            folder = self.run_root / run_id
+            if not folder.is_dir():
+                if requested:
+                    return {"ok": False, "error": "找不到运行目录：" + run_id}
+                run_id = ""
+            else:
+                files = self._data_files_for_run(run_id)
+                if not files and requested:
+                    return {"ok": False,
+                            "error": "这次运行里没有可查询的数据表：" + run_id}
+        if not files:
+            run_id = ""
+            files = [path for path in self.files
+                     if path.is_file() and path.suffix.lower() in TABLE_SUFFIXES]
+        if not files:
+            return {"ok": False,
+                    "error": "本次会话还没有可查询的数据表（支持 csv/tsv/xlsx/parquet）。"}
+
+        try:
+            frames, tables = _load_query_frames(files)
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给模型转述
+            return {"ok": False, "error": "读取数据表失败：" + str(exc)[:200]}
+
+        base = {
+            "run_id": run_id,
+            "source": "、".join(path.name for path in files),
+            "tables": tables,
+        }
+        if preview:
+            main = tables[0]
+            rows = _preview_rows(frames[main["name"]], preview)
+            return {"ok": True, **base, "table": main["name"],
+                    "total_rows": main["rows"], "columns": main["columns"],
+                    "preview": preview, "rows": rows,
+                    "rows_returned": len(rows)}
+
+        shape = str(args.get("shape") or "table").strip().lower()
+        if shape not in ("number", "table"):
+            shape = "table"
+        prompt = (question + "\n只做只读取数：不要修改数据、不要写文件、不要画图，"
+                  "不要编造结果。")
+        try:
+            qa = _make_data_qa(frames)
+            result = qa.ask(prompt, expect_shape=shape, use_cache=False)
+        except Exception as exc:  # noqa: BLE001 - 查询失败如实返回
+            return {"ok": False, **base,
+                    "error": "pandasai 查询失败：" + type(exc).__name__ + "："
+                             + str(exc)[:300]}
+
+        flags = [str(item) for item in (result.get("flags") or [])]
+        code = str(result.get("code") or "")
+        writes = [item for item in flags if item.startswith("writes_file:")]
+        if writes:
+            return {"ok": False, **base, "question": question, "shape": shape,
+                    "error": "生成的代码包含写文件操作，已拒绝结果：" + "、".join(writes),
+                    "flags": flags}
+
+        ok = bool(result.get("ok"))
+        rows = result.get("rows") if shape == "table" else None
+        if isinstance(rows, list):
+            rows = [{str(key): _json_cell(val) for key, val in row.items()}
+                    for row in rows[:50] if isinstance(row, dict)]
+        payload = {
+            "ok": ok,
+            **base,
+            "question": question,
+            "shape": shape,
+            "value": result.get("value"),
+            "raw": result.get("raw"),
+            "rows": rows,
+            "flags": flags,
+            "code": code[:2000],
+            "code_hash": (hashlib.sha256(code.encode("utf-8")).hexdigest()[:16]
+                          if code.strip() else "无代码"),
+            "question_hash": result.get("question_hash") or "",
+            "elapsed_ms": result.get("elapsed_ms") or 0,
+        }
+        if not ok:
+            payload["error"] = ("pandasai 没有解析出结果："
+                                + str(result.get("raw") or "空结果"))
+        return payload
 
     def _check_approval(self, args: dict) -> dict:
         run_id = str(args.get("run_id") or self.last_run or "").strip()
@@ -782,7 +1150,8 @@ class Session:
         try:
             from .s5_write import run_s5
 
-            outcome = run_s5(folder, full=bool(args.get("full")))
+            full = bool(args["full"]) if "full" in args else True
+            outcome = run_s5(folder, full=full)
         except FileNotFoundError as exc:
             return {"ok": False, "error": "前置文件缺失：" + str(exc)}
         except Exception as exc:  # noqa: BLE001 - 失败原因交给模型转述
@@ -832,9 +1201,97 @@ class Session:
             "unconfirmed": len(((data.get("review") or {}).get("materials") or {})
                                .get("unconfirmed") or []),
             "review_page": "/s5.html?run=" + run_id,
-            "draft_excerpt": (data.get("draft") or "")[:700],
+            "draft_excerpt": (data.get("draft") or "")[:(12000 if not data.get("ok") else 700)],
+            "qc": data.get("qc") or {},
+            "fixable": bool(not data.get("ok") and (data.get("qc") or {}).get("verdict") == "FAIL"
+                            and data.get("draft")),
             "log": (data.get("log") or [])[-6:],
         }
+        if payload["fixable"]:
+            payload["ledger_hints"] = _ledger_hints(folder, str(data.get("draft") or ""))
+        return payload
+
+    def _get_s5_draft(self, args: dict) -> dict:
+        """只读：当前正文 + 质检问题 + 台账数字，供用户定夺后定点改稿。"""
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S5。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        draft_path = folder / "draft.md"
+        if not draft_path.is_file():
+            return {"ok": False, "error": "还没有 S5 正文，先跑 run_s5。"}
+        try:
+            draft = draft_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "error": "读取正文失败：" + str(exc)}
+        qc = _read_json(folder / "qc_result.json")
+        facts = _read_json(folder / "s5_facts.json")
+        status = _read_json(folder / "status.json")
+        review = qc.get("ai_review") if isinstance(qc.get("ai_review"), dict) else {}
+        verdict = str(qc.get("verdict") or "")
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "state": str(status.get("state") or ""),
+            "fixable": verdict == "FAIL",
+            "qc": {
+                "verdict": verdict,
+                "summary": str(qc.get("summary") or ""),
+                "checks": qc.get("checks") or [],
+                "issues": review.get("issues") or [],
+                "suggestions": review.get("suggestions") or [],
+                "draft_after_sha256": str(qc.get("draft_after_sha256") or ""),
+            },
+            "draft": draft[:12000],
+            "ledger_hints": _ledger_hints(folder, draft),
+            "business": facts.get("business") or {},
+            "skeleton": facts.get("skeleton") or [],
+            "review_page": "/s5.html?run=" + run_id,
+        }
+
+    def _fix_s5(self, args: dict) -> dict:
+        """按用户定夺的结果定点改稿，只重跑质检，不重跑扩写。"""
+        run_id = str(args.get("run_id") or self.last_run or "").strip()
+        if not run_id:
+            return {"ok": False, "error": "还没有运行记录，先跑 S5。"}
+        folder = self.run_root / run_id
+        if not folder.is_dir():
+            return {"ok": False, "error": "找不到运行目录：" + run_id}
+        edits = args.get("edits") if isinstance(args.get("edits"), list) else []
+        waivers = args.get("waivers") if isinstance(args.get("waivers"), list) else []
+        waive_issues = (args.get("waive_issues")
+                        if isinstance(args.get("waive_issues"), list) else [])
+        ledger_updates = (args.get("ledger_updates")
+                          if isinstance(args.get("ledger_updates"), list) else [])
+        if not edits and not waivers and not waive_issues:
+            return {"ok": False, "error": "edits、waivers、waive_issues 至少给一项。"}
+        try:
+            from .s5_write import fix_draft
+
+            outcome = fix_draft(folder, edits, waivers=waivers,
+                                ledger_updates=ledger_updates,
+                                waive_issues=waive_issues, by="用户")
+        except FileNotFoundError as exc:
+            return {"ok": False, "error": "前置文件缺失：" + str(exc)}
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给模型转述
+            return {"ok": False, "error": "定点修改失败：" + str(exc)}
+        data = outcome.to_dict() if hasattr(outcome, "to_dict") else outcome
+        qc = data.get("qc") or {}
+        payload = {
+            "ok": bool(data.get("ok")),
+            "state": data.get("state") or "",
+            "message": data.get("message") or "",
+            "run_id": data.get("run_id") or run_id,
+            "qc": qc,
+            "fixable": bool(not data.get("ok") and qc.get("verdict") == "FAIL"),
+            "draft_excerpt": (data.get("draft") or "")[:12000] if qc.get("verdict") != "PASS" else "",
+            "review_page": "/s5.html?run=" + run_id,
+            "log": (data.get("log") or [])[-6:],
+        }
+        if payload["fixable"]:
+            payload["ledger_hints"] = _ledger_hints(folder, str(data.get("draft") or ""))
         return payload
 
     def _s5_questions(self, args: dict) -> dict:
@@ -1090,6 +1547,10 @@ class Session:
             return self._run_s4(args)
         if name == "run_s5":
             return self._run_s5(args)
+        if name == "fix_s5":
+            return self._fix_s5(args)
+        if name == "get_s5_draft":
+            return self._get_s5_draft(args)
         if name == "s5_questions":
             return self._s5_questions(args)
         if name == "get_review":
@@ -1104,6 +1565,8 @@ class Session:
             return self._waive_conflicts(args)
         if name == "get_run":
             return self._get_run(args)
+        if name == "ask_data":
+            return self._ask_data(args)
         if name == "check_approval":
             return self._check_approval(args)
         if name == "list_runs":
@@ -1136,6 +1599,7 @@ class Session:
         self.messages[0] = {"role": "system", "content": SYSTEM + self._files_note()}
         self.messages.append({"role": "user", "content": text})
         events: list[dict] = []
+        failed_stage_tools: set[str] = set()
 
         for _ in range(6):
             if on_event is None:
@@ -1164,14 +1628,41 @@ class Session:
             if on_event is not None:
                 # 这一轮只是决定调工具，前面流出的正文不是最终回答
                 on_event({"type": "content_reset"})
-            for call in calls:
+            for index, call in enumerate(calls):
                 function = call.get("function") or {}
                 name = function.get("name") or ""
                 try:
                     args = json.loads(function.get("arguments") or "{}")
                 except json.JSONDecodeError:
                     args = {}
+                call_id = call.get("id") or ""
+                blocked = name in failed_stage_tools or (
+                    "run_s5" in failed_stage_tools and name == "fix_s5")
+                if blocked:
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": json.dumps(
+                            {"ok": False,
+                             "error": "本轮 " + name + " 已停止（S5 未通过）；"
+                                      "先等用户定夺，不要再自动重跑或改稿。"},
+                            ensure_ascii=False),
+                    })
+                    continue
+                if on_event is not None:
+                    on_event({"type": "tool_start", "tool": name,
+                              "args": args, "call_id": call_id})
+                started = time.perf_counter()
                 result = self._execute(name, args, text)
+                elapsed_ms = int((time.perf_counter() - started) * 1000)
+                if on_event is not None:
+                    on_event({"type": "tool_end", "tool": name,
+                              "call_id": call_id,
+                              "ok": bool(result.get("ok")),
+                              "run_id": result.get("run_id") or "",
+                              "state": result.get("state") or "",
+                              "error": str(result.get("error") or ""),
+                              "elapsed_ms": elapsed_ms})
                 events.append({
                     "tool": name,
                     "run_id": result.get("run_id") or "",
@@ -1183,6 +1674,24 @@ class Session:
                     "tool_call_id": call.get("id") or "",
                     "content": json.dumps(result, ensure_ascii=False),
                 })
+                if name in STAGE_TOOLS and not result.get("ok"):
+                    failed_stage_tools.add(name)
+                    if not result.get("fixable"):
+                        for skipped in calls[index + 1:]:
+                            self.messages.append({
+                                "role": "tool",
+                                "tool_call_id": skipped.get("id") or "",
+                                "content": json.dumps(
+                                    {"ok": False, "error": "本轮已因 " + name + " 失败停止，未执行"},
+                                    ensure_ascii=False),
+                            })
+                        detail = str(result.get("message") or result.get("error") or "").strip()
+                        reply = detail or (STAGE_TOOLS[name] + " 执行失败，没有返回原因。")
+                        reply += "\n\n已停止，不会自动重试。确认要重跑时告诉我。"
+                        self.progress["finished"] = True
+                        self.save()
+                        return {"reply": reply, "events": events, "run_id": self.last_run,
+                                "thoughts": list(self.thoughts)}
 
         self.progress["finished"] = True
         self.save()

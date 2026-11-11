@@ -18,6 +18,7 @@ import base64
 import binascii
 import contextlib
 import datetime as dt
+import hashlib
 import inspect
 import io
 import json
@@ -122,6 +123,13 @@ def try_read_json(path: str) -> dict:
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def file_sha256(path: str) -> str:
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return ""
 
 
 def rel_to_root(path: str) -> str:
@@ -316,6 +324,85 @@ def load_run(tag: str) -> dict | None:
         "intake": try_read_json(intake_path),
         "status": try_read_json(os.path.join(folder, "status.json")),
     }
+
+
+def build_pipeline_stages(tag: str) -> dict | None:
+    """按运行目录里的产物汇总 S1–S6 状态，供对话页恢复会话时回填流水线。"""
+    folder = resolve_run_dir(tag)
+    if folder is None:
+        return None
+    intake_path = os.path.join(folder, "intake.json")
+    if not os.path.isfile(intake_path):
+        return None
+    intake = try_read_json(intake_path)
+    status = try_read_json(os.path.join(folder, "status.json"))
+    run = intake.get("run") if isinstance(intake.get("run"), dict) else {}
+    run_id = str(run.get("period_tag") or os.path.basename(folder))
+    stages: dict[str, dict] = {}
+
+    state = str(intake.get("state") or "")
+    if state:
+        stages["s1"] = {"state": state, "run": run_id, "ok": state == "准入通过"}
+
+    cards_path = os.path.join(folder, "cards.json")
+    if os.path.isfile(cards_path):
+        cards = try_read_json(cards_path)
+        cards_state = str(cards.get("state") or "ok")
+        stages["s2"] = {"state": cards_state, "run": run_id,
+                        "ok": cards_state == "ok"}
+
+    issues_path = os.path.join(folder, "issues.json")
+    if os.path.isfile(issues_path):
+        from pipeline.approvals import load as load_approvals, tally
+
+        issues = try_read_json(issues_path)
+        issues_state = str(issues.get("state") or "")
+        blocking = [str(item.get("id")) for item in (issues.get("issues") or [])
+                    if isinstance(item, dict) and item.get("level") == "阻断"
+                    and item.get("id")]
+        verdict = tally(load_approvals(folder).get("s3"), blocking)
+        if issues_state == "ok" and not verdict["approved"]:
+            label = "待裁决"
+        elif issues_state == "ok":
+            label = "已核对"
+        elif issues_state == "blocked":
+            label = "对账未完成"
+        else:
+            label = issues_state or "已运行"
+        stages["s3"] = {"state": label, "run": run_id,
+                        "ok": issues_state == "ok" and verdict["approved"],
+                        "blocking": len(blocking), "pending": verdict["pending"]}
+
+    corrected_path = os.path.join(folder, "corrected.json")
+    if os.path.isfile(corrected_path):
+        corrected = try_read_json(corrected_path)
+        blocked = int((corrected.get("stats") or {}).get("blocked") or 0)
+        stages["s4"] = {"state": "待补充" if blocked else "可扩写",
+                        "run": run_id, "ok": not blocked}
+
+    status_stage = str(status.get("stage") or "")
+    status_state = str(status.get("state") or "")
+    draft_path = os.path.join(folder, "draft.md")
+    if os.path.isfile(draft_path):
+        qc = try_read_json(os.path.join(folder, "qc_result.json"))
+        qc_verdict = str(qc.get("verdict") or "")
+        qc_hash = str(qc.get("draft_after_sha256") or "")
+        qc_fresh = bool(qc_hash) and qc_hash == file_sha256(draft_path)
+        if (qc_fresh and qc_verdict == "FAIL"
+                and status_state in ("", "可扩写", "已生成")):
+            s5_state = "质检未通过"
+        elif status_stage in ("s5", "s6") and status_state:
+            s5_state = status_state
+        elif qc_fresh and qc_verdict == "PASS":
+            s5_state = "待审核"
+        else:
+            s5_state = "未送审"
+        stages["s5"] = {"state": s5_state, "run": run_id,
+                        "ok": s5_state in ("已通过", "已交付")}
+    if status_stage == "s6" and status_state == "已交付":
+        stages["s6"] = {"state": "已交付", "run": run_id, "ok": True}
+
+    return {"ok": True, "run_id": run_id, "stages": stages}
 
 
 # ---------------------------------------------------------------- S2 纪要拆卡
@@ -760,6 +847,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "runs": list_s3_runs()})
             elif path.startswith("/api/s3/"):
                 self.serve_s3_result(path[len("/api/s3/"):])
+            elif path.startswith("/api/pipeline/"):
+                self.serve_pipeline_stages(path[len("/api/pipeline/"):])
             elif path == "/api/s2/runs":
                 self.send_json({"ok": True, "runs": list_s2_runs()})
             elif path.startswith("/api/s2/"):
@@ -1353,6 +1442,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({
             "ok": True, "run_id": tag, "running": running,
             "status": try_read_json(os.path.join(folder, "status.json")),
+            "qc": try_read_json(os.path.join(folder, "qc_result.json")),
             "draft": text, "stats": stats, "manifest": manifest,
             "figures": figures, "hotspots": hotspots,
             "discoveries": facts.get("discoveries") or [],
@@ -1459,7 +1549,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             from pipeline.s5_write import run_s5
 
-            full = bool(payload.get("full"))
+            full = bool(payload.get("full", True))
             log("S5 开始：" + folder + ("（全量）" if full else ""))
             outcome = run_s5(folder, full=full)
             result = outcome.to_dict() if hasattr(outcome, "to_dict") else outcome
@@ -1491,6 +1581,14 @@ class Handler(BaseHTTPRequestHandler):
             log("读取 S5 审核材料失败：" + repr(exc))
         log("S5 完成：" + str(result.get("state") or ""))
         self.send_json(result)
+
+    def serve_pipeline_stages(self, tag: str) -> None:
+        """回填对话页流水线：按落盘产物算 S1–S6 状态，不重跑任何阶段。"""
+        data = build_pipeline_stages(unquote(tag))
+        if data is None:
+            self.send_error_json(404, "找不到运行目录：" + unquote(tag))
+            return
+        self.send_json(data)
 
     def serve_s3_result(self, run_id: str) -> None:
         """读已落盘的 issues.json / ledger.json，不现场重算。"""
@@ -1592,32 +1690,154 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json(data)
 
-    def serve_llm_info(self) -> None:
-        """只报模型与是否配置，绝不返回密钥。"""
-        try:
-            from pipeline.llm import get_config
+    def _llm_state(self) -> dict:
+        """模型状态：供应商列表脱敏，密钥只报 has_key。"""
+        from pipeline import model_config
+        from pipeline.llm import DEFAULT_BASE_URL, DEFAULT_MODEL, load_env
 
-            config = get_config()
-            self.send_json({"ok": True, "configured": True,
-                            "model": config.model, "base_url": config.base_url})
-        except Exception as exc:  # noqa: BLE001 - 未配置是正常状态
-            self.send_json({"ok": False, "configured": False,
-                            "model": os.environ.get("GLM_MODEL", ""),
-                            "error": str(exc)})
+        load_env()
+        env_model = os.environ.get("GLM_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+        env_base = (os.environ.get("GLM_BASE_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL).rstrip("/")
+        env_key = bool(os.environ.get("GLM_API_KEY", "").strip())
+        state = model_config.public_state()
+        active = state["active_provider"]
+        payload = {
+            "providers": state["providers"],
+            "env": {"configured": env_key, "model": env_model, "base_url": env_base},
+        }
+        if active and active["has_key"]:
+            payload.update({"ok": True, "configured": True, "source": "file",
+                            "id": active["id"], "name": active["name"],
+                            "model": active["model"], "base_url": active["base_url"],
+                            "has_key": True})
+        elif env_key:
+            payload.update({"ok": True, "configured": True, "source": "env",
+                            "id": "", "name": "环境变量 / .env",
+                            "model": env_model, "base_url": env_base, "has_key": True})
+        else:
+            payload.update({"ok": False, "configured": False, "source": None,
+                            "id": "", "name": "", "model": env_model,
+                            "base_url": env_base, "has_key": False,
+                            "error": "未配置模型：点顶栏「模型」添加供应商，或在 .env 里填写 GLM_API_KEY"})
+        return payload
+
+    def serve_llm_info(self) -> None:
+        try:
+            self.send_json(self._llm_state())
+        except Exception as exc:  # noqa: BLE001 - 配置读坏了也要让页面能打开
+            self.send_json({"ok": False, "configured": False, "providers": [],
+                            "model": "", "error": str(exc)})
 
     def handle_llm_test(self) -> None:
-        length = 0
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except (TypeError, ValueError):
             length = 0
+        payload: dict = {}
         if length:
-            self.rfile.read(length)
+            if length > MAX_BODY:
+                self.send_error_json(400, "请求体过大", "上限 64MB")
+                return
+            try:
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                self.send_error_json(400, "请求体不是合法 JSON", "")
+                return
+            if not isinstance(payload, dict):
+                self.send_error_json(400, "请求体必须是 JSON 对象", "")
+                return
         try:
-            from pipeline.llm import ping
+            from pipeline import model_config
+            from pipeline.llm import LLMConfig, get_config, load_env, ping
 
-            self.send_json(ping())
+            load_env()
+            if any(str(payload.get(k) or "").strip()
+                   for k in ("base_url", "model", "api_key", "id")):
+                conn = model_config.resolve_connection(payload)
+                if not conn["model"]:
+                    raise model_config.ModelConfigError("测试连接需要填写模型名")
+                config = LLMConfig(conn["api_key"], conn["base_url"], conn["model"])
+            else:
+                config = get_config()
+            self.send_json(ping(config))
+        except model_config.ModelConfigError as exc:
+            self.send_json({"ok": False, "error": str(exc)}, 400)
         except Exception as exc:  # noqa: BLE001 - 把失败原因交给前端
+            self.send_json({"ok": False, "error": str(exc)}, 502)
+
+    def handle_llm_save(self) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        from pipeline import model_config
+
+        try:
+            provider = model_config.upsert(payload)
+            state = self._llm_state()
+            state["ok"] = True
+            state["saved"] = provider
+            self.send_json(state)
+        except model_config.ModelConfigError as exc:
+            self.send_error_json(400, str(exc), "")
+        except Exception as exc:  # noqa: BLE001 - 失败原因交给前端
+            log("保存模型配置失败：" + repr(exc))
+            self.send_error_json(500, "保存模型配置失败", str(exc))
+
+    def handle_llm_activate(self) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        from pipeline import model_config
+
+        try:
+            provider_id = str(payload.get("id") or "").strip()
+            if not provider_id:
+                raise model_config.ModelConfigError("缺少供应商 id")
+            provider = model_config.activate(provider_id)
+            state = self._llm_state()
+            state["ok"] = True
+            state["saved"] = provider
+            self.send_json(state)
+        except model_config.ModelConfigError as exc:
+            self.send_error_json(400, str(exc), "")
+        except Exception as exc:  # noqa: BLE001
+            self.send_error_json(500, "启用供应商失败", str(exc))
+
+    def handle_llm_delete(self) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        from pipeline import model_config
+
+        try:
+            provider_id = str(payload.get("id") or "").strip()
+            if not provider_id:
+                raise model_config.ModelConfigError("缺少供应商 id")
+            model_config.delete(provider_id)
+            state = self._llm_state()
+            state["ok"] = True
+            self.send_json(state)
+        except model_config.ModelConfigError as exc:
+            self.send_error_json(400, str(exc), "")
+        except Exception as exc:  # noqa: BLE001
+            self.send_error_json(500, "删除供应商失败", str(exc))
+
+    def handle_llm_models(self) -> None:
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        from pipeline import model_config
+
+        try:
+            from pipeline.llm import list_models, load_env
+
+            load_env()
+            conn = model_config.resolve_connection(payload)
+            models = list_models(conn["base_url"], conn["api_key"])
+            self.send_json({"ok": True, "models": models, "base_url": conn["base_url"]})
+        except model_config.ModelConfigError as exc:
+            self.send_error_json(400, str(exc), "")
+        except Exception as exc:  # noqa: BLE001 - 接口错误交给前端
             self.send_json({"ok": False, "error": str(exc)}, 502)
 
     # -- 对话 ------------------------------------------------------------
@@ -1901,6 +2121,18 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/llm/test":
             self.handle_llm_test()
+            return
+        if path == "/api/llm/providers":
+            self.handle_llm_save()
+            return
+        if path == "/api/llm/activate":
+            self.handle_llm_activate()
+            return
+        if path == "/api/llm/delete":
+            self.handle_llm_delete()
+            return
+        if path == "/api/llm/models":
+            self.handle_llm_models()
             return
         if path.startswith("/api/runs/") and path.endswith("/waive"):
             self.handle_waive(path[len("/api/runs/"):-len("/waive")])

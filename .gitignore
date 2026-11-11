@@ -1,5 +1,7 @@
 # 密钥与本地配置
 .env
+config/models.json
+config/models.json.tmp
 
 # 运行产物与上传的真实数据，不入库
 runs/
@@ -21,3 +23,6 @@ _tmp/
 # 系统
 .DS_Store
 Thumbs.db
+
+# Office 编辑锁
+.qoder-office-pptx-locks/

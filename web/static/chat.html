@@ -53,9 +53,10 @@
 .pipeline-side{padding:26px 0 0;min-width:0;align-self:start}
 .pipeline-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px 2px;font-size:11px;letter-spacing:.08em;color:var(--muted)}
 .pipeline-list{list-style:none;margin:0;padding:0;position:relative}
-.pipeline-list::before{content:"";position:absolute;left:8px;top:8px;bottom:8px;width:1px;background:var(--line)}
 .pipeline-node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:0 0 22px}
+.pipeline-node::before{content:"";position:absolute;left:8px;top:9px;bottom:-10px;width:1px;background:var(--line)}
 .pipeline-node:last-child{padding-bottom:0}
+.pipeline-node:last-child::before{display:none}
 .pipeline-dot{
   position:relative;z-index:1;width:17px;height:17px;flex:none;margin-top:1px;
   border:2px solid var(--line-strong);border-radius:50%;background:var(--surface);
@@ -146,6 +147,11 @@
   padding:1px 5px;border:1px solid var(--line);border-radius:5px;
   background:var(--surface-muted);font-family:var(--mono);font-size:.9em;
 }
+.msg-content .md-table-wrap{margin:8px 0 10px;border:1px solid var(--line);border-radius:9px;overflow-x:auto;background:var(--surface)}
+.msg-content .md-table-wrap table{border-collapse:collapse;width:100%;font-size:13px;line-height:1.6}
+.msg-content .md-table-wrap th,.msg-content .md-table-wrap td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.msg-content .md-table-wrap th{background:var(--surface-muted);font-weight:600;color:var(--ink);white-space:nowrap}
+.msg-content .md-table-wrap tbody tr:last-child td{border-bottom:0}
 .bubble{
   max-width:100%;padding:10px 14px;
   border:1px solid #e0e3fa;border-radius:16px;border-bottom-right-radius:6px;
@@ -199,6 +205,30 @@
 .event-override:hover{background:#f7e8c3;border-color:var(--warn)}
 .event-override:disabled{opacity:.55;cursor:not-allowed}
 
+/* ---------- 实时工具调用 ---------- */
+.tool-activity{display:flex;flex-direction:column;gap:6px;margin:10px 0 0;max-width:780px}
+.tool-row{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 10px;border:1px solid var(--line);border-radius:9px;
+  background:var(--surface);font-size:12px;color:var(--ink-2);
+  animation:fadeUp .18s var(--ease);
+}
+.tool-row.error{border-color:#f0c9c4;background:var(--danger-soft);color:#7c2822}
+.tool-spinner{
+  width:12px;height:12px;flex:none;border-radius:50%;
+  border:2px solid var(--accent-soft);border-top-color:var(--accent);
+  animation:spin .7s linear infinite;
+}
+.tool-mark{
+  width:14px;height:14px;flex:none;display:grid;place-items:center;
+  border-radius:50%;background:var(--ok);color:#fff;
+  font-size:10px;font-weight:700;line-height:1;
+}
+.tool-row.error .tool-mark{background:var(--danger)}
+.tool-name{font-weight:600;white-space:nowrap}
+.tool-hint{min-width:0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool-time{margin-left:auto;flex:none;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+
 /* ---------- 执行过程 ---------- */
 .trace{
   max-width:820px;margin-top:10px;overflow:hidden;
@@ -227,23 +257,24 @@
   display:grid;place-items:center;border-radius:50%;
   border:1.5px solid var(--line-strong);background:var(--surface);
 }
+.step .step-body{display:flex;flex-direction:column;gap:1px;min-width:0}
 .step .name{line-height:18px;padding-top:0}
+.step-detail{font-size:11.5px;line-height:1.55;color:var(--muted);font-weight:400;overflow-wrap:break-word}
 .step.done{color:var(--ink-2)}
 .step.done .dot{color:#fff;background:var(--ok);border-color:var(--ok)}
 .step.done .dot svg{width:11px;height:11px}
 .step.active{color:var(--accent-ink);font-weight:600}
 .step.active .dot{
-  border:0;
-  background:conic-gradient(from 0deg,var(--accent) 0deg 100deg,var(--accent-soft) 100deg 360deg);
-  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.5px),#000 calc(100% - 2.4px));
-  mask:radial-gradient(farthest-side,transparent calc(100% - 2.5px),#000 calc(100% - 2.4px));
+  border:2px solid var(--accent-soft);
+  border-top-color:var(--accent);
+  background:transparent;
   animation:spin .9s linear infinite;
 }
 .step.thought{cursor:pointer;font-weight:400}
 .step.thought .dot{border-style:dashed;background:var(--surface)}
 .step.thought .name{font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:break-word}
 .step.thought.open .name{color:var(--ink-2)}
-.p-detail{padding:0 14px 12px 42px;font-size:12px;line-height:1.65;color:var(--muted)}
+.p-detail{padding:2px 14px 12px 52px;font-size:11.5px;line-height:1.55;color:var(--muted)}
 
 /* ---------- 输入区 ---------- */
 .composer-wrap{padding:6px 0 calc(14px + env(safe-area-inset-bottom))}
@@ -464,6 +495,84 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
 .s5-history-item{text-align:left;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:7px 10px;font-family:inherit;font-size:12px;color:var(--text);cursor:pointer}
 .s5-history-item:hover{background:var(--surface-muted)}
 .s5-history-draft{margin:8px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-muted);white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.65;max-height:320px;overflow:auto}
+
+/* ---------- S5 内嵌编辑与审核 ---------- */
+.s5-inline{margin:16px 0 0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.s5-inline h4{margin:0 0 10px;font-size:13.5px;line-height:1.4;color:var(--ink)}
+.s5-inline-note{margin:0 0 10px;font-size:11.5px;line-height:1.6;color:var(--muted)}
+.s5-review-state{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface-muted)}
+.s5-review-badge{padding:1px 9px;border-radius:999px;background:var(--ink);color:#fff;font-size:11px;line-height:19px;white-space:nowrap}
+.s5-review-badge.ok{background:var(--ok)}
+.s5-review-badge.warn{background:var(--warn)}
+.s5-review-badge.stop{background:var(--danger)}
+.s5-review-msg{flex:1;min-width:180px;font-size:12.5px;line-height:1.6;color:var(--ink-2)}
+.s5-review-meta{margin:8px 0 0;font-size:11.5px;line-height:1.7;color:var(--muted)}
+.s5-review-comments{margin:10px 0 0}
+.s5-comment{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface-muted);margin-bottom:7px}
+.s5-comment .s5-comment-raw{font-size:12.5px;line-height:1.65;color:var(--ink-2)}
+.s5-comment .s5-comment-meta{margin-top:4px;font-size:11px;line-height:1.5;color:var(--muted)}
+.s5-review-form{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.s5-review-row{margin-bottom:9px}
+.s5-review-row label{display:block;margin-bottom:4px;font-size:11.5px;color:var(--muted)}
+.s5-review-row input[type="text"],
+.s5-review-row select,
+.s5-comment textarea,
+.s5-comment input[type="text"],
+.s5-q-row textarea,
+.s5-q-row input[type="text"],
+.s5-q-row select{
+  width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:8px;
+  background:var(--surface);color:var(--ink);font:inherit;font-size:12.5px;line-height:1.55;
+}
+.s5-review-row input[type="text"]:focus,
+.s5-comment textarea:focus,
+.s5-q-row textarea:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.s5-decision{display:flex;align-items:center;gap:18px;margin:8px 0;font-size:12.5px}
+.s5-decision label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.s5-comment-grid{display:grid;grid-template-columns:130px minmax(0,1fr) minmax(0,1fr);gap:7px;margin-top:7px}
+.s5-form-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.s5-inline-msg{margin:0;font-size:11.5px;line-height:1.5;color:var(--muted)}
+.s5-inline-msg.error{color:var(--danger)}
+.s5-q-rows{display:flex;flex-direction:column;gap:8px}
+.s5-q-row{padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface-muted)}
+.s5-q-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.s5-q-id{font-family:var(--mono);font-size:11px;color:var(--accent-ink)}
+.s5-q-del{margin-left:auto;padding:1px 8px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);color:var(--muted);font:inherit;font-size:10.5px;cursor:pointer}
+.s5-q-del:hover{border-color:var(--danger);color:var(--danger)}
+.s5-q-grid{display:grid;grid-template-columns:120px minmax(0,1fr);gap:7px;margin-top:6px}
+.s5-q-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.s5-review-materials{margin-top:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.s5-review-materials summary{padding:8px 10px;font-size:12px;color:var(--ink-2);cursor:pointer}
+.s5-review-materials .s5-material-body{padding:0 10px 10px;font-size:12px;line-height:1.65;color:var(--muted)}
+.s5-material-list{list-style:none;margin:0;padding:0}
+.s5-material-list li{padding:5px 0;border-bottom:1px solid var(--line);color:var(--ink-2)}
+.s5-material-list li:last-child{border-bottom:0}
+.s5-material-list b{color:var(--ink)}
+
+/* ---------- S6 内嵌交付 ---------- */
+.s6-inline{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted)}
+.s6-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.s6-inline-msg{margin:0;font-size:11.5px;line-height:1.5;color:var(--muted)}
+.s6-inline-msg.error{color:var(--danger)}
+.s6-files{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.s6-file{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-muted);font-size:12px}
+.s6-file a{min-width:0;color:var(--accent);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.s6-file .size{margin-left:auto;flex:none;color:var(--muted);font-family:var(--mono);font-size:10.5px}
+.s6-download{
+  flex:none;margin-left:2px;padding:2px 10px;border:1px solid var(--line-strong);border-radius:999px;
+  background:var(--surface);color:var(--ink-2);font-size:10.5px;line-height:18px;white-space:nowrap;
+  cursor:pointer;transition:color .16s var(--ease),border-color .16s var(--ease),background-color .16s var(--ease);
+}
+.s6-download:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
+.s6-manifest{margin-top:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.s6-manifest summary{padding:8px 10px;font-size:12px;cursor:pointer}
+.s6-manifest pre{margin:0;padding:10px 12px;border-top:1px solid var(--line);background:var(--surface);font-family:var(--mono);font-size:11px;line-height:1.55;max-height:320px;overflow:auto;white-space:pre-wrap}
+.s6-empty{margin:10px 0 0;padding:14px;border:1px dashed var(--line-strong);border-radius:9px;color:var(--muted);font-size:12.5px;line-height:1.6;text-align:center}
+.s6-empty .s6-actions{justify-content:center}
+.s6-detail-dialog{max-width:900px}
+@media (max-width:720px){
+  .s5-comment-grid,.s5-q-grid{grid-template-columns:1fr}
+}
 .s5-fig .fig-missing{display:flex;align-items:center;justify-content:center;min-height:150px;border:1px dashed var(--line);border-radius:6px;background:var(--surface-muted);color:var(--muted);font-size:12.5px;text-align:center;padding:12px}
 .s2-stat{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted)}.s2-stat .k{font-size:11px;color:var(--muted)}
 .s2-stat .v{margin-top:2px;font-size:20px;font-weight:600;line-height:1.25;color:var(--ink)}
@@ -490,8 +599,8 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
   .pipeline-side{padding:10px 0 0}
   .pipeline-head{display:none}
   .pipeline-list{display:flex;gap:8px;overflow-x:auto;padding:0 0 6px}
-  .pipeline-list::before{display:none}
   .pipeline-node{flex:1 0 auto;padding:0;gap:6px;align-items:center}
+  .pipeline-node::before{display:none}
   .pipeline-dot{width:14px;height:14px;margin:0}
   .pipeline-name{font-size:11.5px}
   .pipeline-meta{display:none}
@@ -530,12 +639,14 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
   .s2-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:560px){
-  .nav a.runs-link{display:none}
+  .nav a{display:none}
 }
 @media (max-width:480px){
   .brand-name{display:none}
 }
 </style>
+<link rel="stylesheet" href="/static/model-settings.css">
+<script src="/static/model-settings.js" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -720,6 +831,21 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
   </section>
 </dialog>
 
+<dialog class="detail-dialog s6-detail-dialog" id="s6DetailDialog" aria-labelledby="s6DetailTitle">
+  <section class="detail-card">
+    <header class="detail-head">
+      <div>
+        <div class="detail-kicker">S6 交付归档</div>
+        <h2 id="s6DetailTitle">交付详情</h2>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-square" id="s6DetailClose" type="button" aria-label="关闭交付详情">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="detail-body" id="s6DetailBody">正在读取…</div>
+  </section>
+</dialog>
+
 <script>
 (function () {
   "use strict";
@@ -773,6 +899,10 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
   var s5DetailTitle = document.getElementById("s5DetailTitle");
   var s5DetailBody = document.getElementById("s5DetailBody");
   var s5DetailFoot = document.getElementById("s5DetailFoot");
+  var s6DetailDialog = document.getElementById("s6DetailDialog");
+  var s6DetailTitle = document.getElementById("s6DetailTitle");
+  var s6DetailBody = document.getElementById("s6DetailBody");
+  var s6DetailClose = document.getElementById("s6DetailClose");
   var s5DetailClose = document.getElementById("s5DetailClose");
   var s5PollTimer = null;
 
@@ -780,7 +910,36 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>';
   var WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 17.5A1.8 1.8 0 0 0 4 20.2h16a1.8 1.8 0 0 0 1.6-2.7L13.7 3.9a1.9 1.9 0 0 0-3.4 0Z"/></svg>';
   var CHEVRON = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
-  var TOOL_LABELS = { run_s1: "S1 准入", run_s2: "S2 拆卡", run_s3: "S3 对账", run_s4: "S4 修纪要", run_s5: "S5 扩写审核", run_s6: "S6 交付" };
+  var TOOL_LABELS = {
+    run_s1: "S1 准入", run_s2: "S2 拆卡", run_s3: "S3 对账",
+    run_s4: "S4 修纪要", run_s5: "S5 扩写审核", fix_s5: "S5 定点修改", run_s6: "S6 交付",
+    s5_questions: "S5 问题清单", recalc_card: "重算卡片",
+    get_s5_draft: "读取 S5 正文",
+    waive_conflicts: "登记人工豁免", get_review: "读取审核记录",
+    get_delivery: "读取交付包", get_run: "读取运行记录",
+    ask_data: "查询数据",
+    check_approval: "检查审批", list_runs: "列出运行记录"
+  };
+
+  function toolHint(name, args) {
+    args = args || {};
+    if (name === "recalc_card") return [args.card_id, args.hint].filter(Boolean).join(" · ");
+    if (name === "waive_conflicts") return (args.items || []).join("、");
+    if (name === "s5_questions") return args.action ? "动作：" + args.action : "";
+    if (name === "fix_s5") return (args.edits || []).length ? "改 " + args.edits.length + " 处" : "只重跑复核";
+    if (name === "run_s5") return args.full ? "全量重跑" : "增量重算";
+    if (name === "run_s1") return "检查本次上传的材料";
+    if (name === "run_s2") return "把纪要拆成可核对卡片";
+    if (name === "run_s3") return "取数并核对口径";
+    if (name === "run_s4") return "按问题清单修纪要";
+    if (name === "run_s6") return "按审核签名归档";
+    if (name === "ask_data") {
+      if (args.preview) return "原始数据前 " + args.preview + " 行";
+      return args.question || "";
+    }
+    if (args.run_id) return args.run_id;
+    return "";
+  }
   var FILE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>';
   var TRASH = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13M10 11v6M14 11v6"/></svg>';
 
@@ -840,11 +999,30 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     try { localStorage.setItem(key, JSON.stringify(pipeline)); } catch (e) {}
   }
 
-  function stageLabel(data) {
+  function stageLabel(data, key) {
     if (!data) return "待运行";
     var state = String(data.state || "");
+    if (key === "s5" && data.ok === false
+        && (state === "可扩写" || state === "")) return "质检未通过";
     if (state === "ok" || state === "done") return "已完成";
+    if (state === "blocked") return "对账未完成";
     return state || "已运行";
+  }
+
+  function syncPipelineFromServer(runId) {
+    if (!runId) return Promise.resolve();
+    return fetch("/api/pipeline/" + encodeURIComponent(runId))
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data || !data.ok || !data.stages) return;
+        Object.keys(data.stages).forEach(function (key) {
+          if (pipeline[key] === undefined) return;
+          pipeline[key] = data.stages[key] || pipeline[key];
+        });
+        savePipeline();
+        renderPipeline();
+      })
+      .catch(function () {});
   }
 
   function renderPipeline() {
@@ -853,11 +1031,13 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     PIPELINE_STAGES.forEach(function (stage) {
       var data = pipeline[stage.key];
       var tone = data ? stateTone(data.state) : "neutral";
+      if (stage.key === "s5" && data && data.ok === false
+          && String(data.state || "") === "可扩写") tone = "stop";
       var li = el("li", "pipeline-node" + (data ? "" : " pending"));
       li.appendChild(el("span", "pipeline-dot " + tone));
       var text = el("div", "pipeline-text");
       text.appendChild(el("div", "pipeline-name", stage.label));
-      var meta = data ? (stageLabel(data) + (data.run ? " · " + data.run : "")) : "待运行";
+      var meta = data ? (stageLabel(data, stage.key) + (data.run ? " · " + data.run : "")) : "待运行";
       text.appendChild(el("div", "pipeline-meta", meta));
       if (stage.key === "s1" && data && data.run) {
         li.classList.add("clickable");
@@ -956,7 +1136,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
         li.setAttribute("tabindex", "0");
         li.setAttribute("aria-label", "查看 S6 交付");
         var openS6 = function () {
-          window.open("/s6.html?run=" + encodeURIComponent(s6Run), "_blank");
+          openS6Detail(s6Run);
         };
         li.addEventListener("click", openS6);
         li.addEventListener("keydown", function (event) {
@@ -985,7 +1165,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
         : (ev.tool === "run_s2" ? "s2"
         : (ev.tool === "run_s3" ? "s3"
         : (ev.tool === "run_s4" ? "s4"
-        : (ev.tool === "run_s5" ? "s5"
+        : (ev.tool === "run_s5" || ev.tool === "fix_s5" ? "s5"
         : (ev.tool === "run_s6" ? "s6" : "")))));
       if (!key) return;
       if (key === "s1") {
@@ -1158,20 +1338,69 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
   }
 
+  function splitTableRow(line) {
+    var trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    return trimmed.split("|").map(function (cell) { return cell.trim(); });
+  }
+
+  function isTableSeparator(line) {
+    return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(String(line || ""));
+  }
+
+  function buildTable(blockLines) {
+    var head = splitTableRow(blockLines[0]);
+    var wrap = el("div", "md-table-wrap");
+    var table = el("table");
+    var thead = el("thead");
+    var headRow = el("tr");
+    head.forEach(function (cell) {
+      var th = el("th");
+      appendInline(th, cell);
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    var body = blockLines.slice(2).filter(function (line) { return line.trim(); });
+    if (body.length) {
+      var tbody = el("tbody");
+      body.forEach(function (line) {
+        var cells = splitTableRow(line);
+        var tr = el("tr");
+        for (var c = 0; c < head.length; c++) {
+          var td = el("td");
+          appendInline(td, cells[c] || "");
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+    }
+    wrap.appendChild(table);
+    return wrap;
+  }
+
   function renderRich(container, text) {
     var normalized = String(text || "").replace(/([。！？；])\s*-\s+/g, "$1\n- ");
     var lines = normalized.split(/\n/);
     var list = null;
-    lines.forEach(function (line) {
-      var trimmed = line.trim();
-      if (!trimmed) { list = null; return; }
+    for (var index = 0; index < lines.length; index++) {
+      var trimmed = lines[index].trim();
+      if (!trimmed) { list = null; continue; }
+      if (trimmed.indexOf("|") >= 0 && isTableSeparator(lines[index + 1])) {
+        list = null;
+        var end = index + 2;
+        while (end < lines.length && lines[end].trim() && lines[end].indexOf("|") >= 0) end++;
+        container.appendChild(buildTable(lines.slice(index, end)));
+        index = end - 1;
+        continue;
+      }
       var heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
       if (heading) {
         list = null;
         var h = el("h" + Math.min(heading[1].length + 1, 4));
         appendInline(h, heading[2]);
         container.appendChild(h);
-        return;
+        continue;
       }
       var bullet = trimmed.indexOf("- ") === 0 || trimmed.indexOf("• ") === 0;
       var numbered = /^\d+[.、]\s+/.test(trimmed);
@@ -1189,7 +1418,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
         appendInline(p, trimmed);
         container.appendChild(p);
       }
-    });
+    }
   }
   function appendMessage(role, text) {
     var stick = !messages.querySelector(".msg") || isNearBottom();
@@ -1223,10 +1452,11 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
   function stateTone(state) {
     var s = String(state || "").trim();
     if (s === "准入通过" || s === "可扩写" || s === "已生成" || s === "已通过"
-        || s === "已交付" || s === "ok" || s === "done") return "ok";
-    if (s === "待补充" || s === "扩写中" || s === "待审核"
-        || s === "warn" || s === "degrade") return "warn";
-    if (s === "暂停" || s === "退回修改" || s === "blocked" || s === "failed" || s === "error") return "stop";
+        || s === "已核对" || s === "已交付" || s === "ok" || s === "done") return "ok";
+    if (s === "待补充" || s === "扩写中" || s === "待审核" || s === "待裁决"
+        || s === "未送审" || s === "warn" || s === "degrade") return "warn";
+    if (s === "暂停" || s === "退回修改" || s === "对账未完成" || s === "blocked"
+        || s === "质检未通过" || s === "failed" || s === "error") return "stop";
     return "neutral";
   }
 
@@ -1236,7 +1466,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     return sec;
   }
 
-  function renderRunDetail(intake, status) {
+  function renderRunDetail(intake) {
     var body = runDetailBody;
     body.textContent = "";
     body.scrollTop = 0;
@@ -1348,26 +1578,29 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       body.appendChild(el("p", "detail-note", "没有未解决的冲突或缺口。"));
     }
 
+    var waived = intake.waived || [];
+    if (waived.length) {
+      var waiverSec = detailSection("人工豁免");
+      waiverSec.appendChild(el("p", "detail-note",
+        "以下事项由用户确认接受；后续阶段沿同一条裁决，不再当缺口或冲突。"));
+      var waiverList = el("ul", "detail-list");
+      waived.forEach(function (item) {
+        var li = el("li");
+        li.appendChild(el("span", "d-tag warn", "豁免"));
+        li.appendChild(document.createTextNode((item.items || []).join("、") || "—"));
+        if (item.reason) li.appendChild(el("div", "detail-sub", "理由：" + item.reason));
+        if (item.by) li.appendChild(el("div", "detail-sub", "登记：" + item.by + " · " + (item.at || "—")));
+        waiverList.appendChild(li);
+      });
+      waiverSec.appendChild(waiverList);
+      body.appendChild(waiverSec);
+    }
+
     if (intake.next_action) {
       var next = intake.next_action === "continue"
         ? "可以进入 S2 拆卡。"
         : "先处理上面的问题，再重跑 S1。";
       body.appendChild(el("p", "detail-note", "下一步：" + next));
-    }
-
-    var history = ((status && status.history) || []).slice(-6);
-    if (history.length) {
-      var historySec = detailSection("历史状态");
-      var historyList = el("ul", "detail-list");
-      history.forEach(function (item) {
-        var li = el("li");
-        li.appendChild(el("span", "d-tag " + stateTone(item.state), item.state || "—"));
-        var when = String(item.at || "").replace("T", " ").slice(5, 16);
-        li.appendChild(document.createTextNode((when ? when + " · " : "") + (item.note || "")));
-        historyList.appendChild(li);
-      });
-      historySec.appendChild(historyList);
-      body.appendChild(historySec);
     }
 
     var runTag = String(run.period_tag || "");
@@ -1393,7 +1626,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       var resp = await fetch("/api/runs/" + encodeURIComponent(runId));
       var data = await resp.json();
       if (!data.intake) throw new Error(data.error || "找不到这次运行");
-      renderRunDetail(data.intake, data.status || {});
+      renderRunDetail(data.intake);
     } catch (err) {
       runDetailBody.textContent = "读取失败：" + (err.message || err);
     }
@@ -1586,7 +1819,8 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       ["阻断", stats.blocking || 0],
       ["提示", stats.warn || 0],
       ["信息", stats.info || 0],
-      ["已核对", stats.checked || 0]
+      ["已核对", stats.checked || 0],
+      ["豁免", stats.waived || 0]
     ].forEach(function (item) {
       var box = el("div", "s2-stat");
       box.appendChild(el("div", "k", item[0]));
@@ -1679,6 +1913,26 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     } else {
       body.appendChild(el("p", "detail-note", "没有核对结果。"));
     }
+
+    var waived = issues.waived || [];
+    if (waived.length) {
+      var waiverSec = detailSection("S1 人工豁免");
+      waiverSec.appendChild(el("p", "detail-note",
+        "以下事项已在 S1 由用户确认，对账不再当作缺口或冲突；相关卡片没有计入核对数。"));
+      var waiverList = el("ul", "detail-list");
+      waived.forEach(function (item) {
+        var li = el("li");
+        li.appendChild(el("span", "d-tag warn", "豁免"));
+        li.appendChild(document.createTextNode(item.item || "—"));
+        if (item.reason) li.appendChild(el("div", "detail-sub", "理由：" + item.reason));
+        if ((item.cards || []).length) {
+          li.appendChild(el("div", "detail-sub", "涉及卡片：" + item.cards.join("、")));
+        }
+        waiverList.appendChild(li);
+      });
+      waiverSec.appendChild(waiverList);
+      body.appendChild(waiverSec);
+    }
   }
 
   function s3BlockingIds(issues) {
@@ -1768,6 +2022,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     var top = s3DetailBody.scrollTop;
     renderS3Detail(s3View.issues, s3View.ledger, s3View.approval, s3View.runId, s3View.quotes);
     s3DetailBody.scrollTop = top;
+    syncPipelineFromServer(s3View.runId);
     if (data && data.note) appendMessage("assistant", data.note);
   }
 
@@ -2270,34 +2525,755 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     }
   }
 
-  function s5EditQuestionsButton(runId) {
-    var btn = el("button", "btn btn-ghost btn-sm", "编辑问题");
-    btn.type = "button";
-    btn.title = "在 S5 页面增删改数据发现问题";
-    btn.addEventListener("click", function () {
-      window.open("/s5.html?run=" + encodeURIComponent(runId), "_blank");
-    });
-    return btn;
+  function s5ReviewTone(state) {
+    if (state === "已通过" || state === "已交付") return "ok";
+    if (state === "待审核" || state === "退回修改") return "warn";
+    if (state === "已生成") return "";
+    return "";
   }
 
-  function s5ReviewButton(runId, state) {
+  function s5ReviewMessage(state) {
+    if (state === "待审核") return "扩写完成，等待审核人签名确认。";
+    if (state === "退回修改") return "已退回修改；按意见调整后重新扩写。";
+    if (state === "已通过") return "审核已通过并签名，可以进入 S6 交付。";
+    if (state === "已交付") return "已交付归档。";
+    if (state === "已生成") return "旧稿尚未送审，可以先送审再签名。";
+    return "当前状态：" + (state || "未知");
+  }
+
+  function s5AppendComments(host, comments) {
+    var categoryLabels = {
+      wording: "措辞", structure: "结构", length: "篇幅", chart: "图表呈现",
+      number: "数字", caliber: "口径", omission: "遗漏"
+    };
+    (comments || []).forEach(function (item, index) {
+      var box = el("div", "s5-comment");
+      box.appendChild(el("div", "s5-comment-raw",
+        (index + 1) + ". " + String(item.raw || "")));
+      var meta = [];
+      if (item.where) meta.push("位置：" + item.where);
+      if (item.expect) meta.push("期望：" + item.expect);
+      if (item.back_to) meta.push("归到：" + item.back_to);
+      if (item.category) {
+        meta.push("类别：" + (categoryLabels[item.category] || item.category));
+      }
+      if (meta.length) box.appendChild(el("div", "s5-comment-meta", meta.join(" · ")));
+      host.appendChild(box);
+    });
+  }
+
+  function s5ReviewForm(runId, record, host) {
+    var form = el("div", "s5-review-form");
+    form.appendChild(el("h4", "",
+      "签名确认审核（第 " + ((parseInt(record.round, 10) || 0) + 1) + " 轮）"));
+    var row = el("div", "s5-review-row");
+    row.appendChild(el("label", "", "审核人（签名）"));
+    var reviewer = el("input", "");
+    reviewer.type = "text";
+    reviewer.placeholder = "填写审核人姓名，作为审核签名";
+    reviewer.autocomplete = "off";
+    try { reviewer.value = localStorage.getItem("s5_reviewer") || ""; } catch (e) {}
+    row.appendChild(reviewer);
+    form.appendChild(row);
+
+    var decision = el("div", "s5-decision");
+    function radio(value, text, checked) {
+      var label = el("label", "");
+      var input = el("input", "");
+      input.type = "radio";
+      input.name = "s5ReviewDecision";
+      input.value = value;
+      input.checked = checked;
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(text));
+      decision.appendChild(label);
+      return input;
+    }
+    radio("pass", "通过", true);
+    radio("reject", "退回修改", false);
+    form.appendChild(decision);
+
+    var commentBox = el("div", "");
+    commentBox.hidden = true;
+    var comments = [];
+    var commentRows = el("div", "");
+    commentBox.appendChild(el("p", "s5-inline-note",
+      "退回必须至少写一条具体意见；数字 / 口径 / 遗漏归到 S3，措辞 / 结构 / 篇幅 / 图表呈现归到 S5。"));
+    commentBox.appendChild(commentRows);
+    var addComment = el("button", "btn btn-ghost btn-sm", "+ 新增意见");
+    addComment.type = "button";
+    commentBox.appendChild(addComment);
+    form.appendChild(commentBox);
+
+    function renderComments() {
+      commentRows.textContent = "";
+      comments.forEach(function (item) {
+        var box = el("div", "s5-comment");
+        var head = el("div", "s5-q-head");
+        head.appendChild(el("span", "s5-q-id", "意见"));
+        var del = el("button", "s5-q-del", "删除");
+        del.type = "button";
+        del.addEventListener("click", function () {
+          comments = comments.filter(function (other) { return other !== item; });
+          renderComments();
+        });
+        head.appendChild(del);
+        box.appendChild(head);
+        var area = el("textarea", "");
+        area.rows = 2;
+        area.placeholder = "具体指出哪一段 / 哪个数字有什么问题";
+        area.value = item.raw;
+        area.addEventListener("input", function () { item.raw = area.value; });
+        box.appendChild(area);
+        var grid = el("div", "s5-comment-grid");
+        var category = el("select", "");
+        [["wording", "措辞 → S5"], ["structure", "结构 → S5"], ["length", "篇幅 → S5"],
+         ["chart", "图表呈现 → S5"], ["number", "数字 → S3"], ["caliber", "口径 → S3"],
+         ["omission", "遗漏 → S3"]].forEach(function (pair) {
+          var option = el("option", "", pair[1]);
+          option.value = pair[0];
+          category.appendChild(option);
+        });
+        category.value = item.category;
+        category.addEventListener("change", function () { item.category = category.value; });
+        grid.appendChild(category);
+        var where = el("input", "");
+        where.type = "text";
+        where.placeholder = "位置 / 章节";
+        where.value = item.where;
+        where.addEventListener("input", function () { item.where = where.value; });
+        grid.appendChild(where);
+        var expect = el("input", "");
+        expect.type = "text";
+        expect.placeholder = "期望改成什么";
+        expect.value = item.expect;
+        expect.addEventListener("input", function () { item.expect = expect.value; });
+        grid.appendChild(expect);
+        box.appendChild(grid);
+        commentRows.appendChild(box);
+      });
+      if (!comments.length) commentRows.appendChild(el("p", "s5-inline-note", "还没有意见。"));
+    }
+
+    function addCommentRow() {
+      comments.push({raw: "", category: "wording", where: "", expect: ""});
+      renderComments();
+    }
+    addComment.addEventListener("click", addCommentRow);
+
+    function selectedDecision() {
+      var checked = decision.querySelector('input[name="s5ReviewDecision"]:checked');
+      return checked ? checked.value : "pass";
+    }
+    decision.addEventListener("change", function () {
+      var reject = selectedDecision() === "reject";
+      commentBox.hidden = !reject;
+      submit.textContent = reject ? "提交退回意见" : "签名确认审核";
+      if (reject && !comments.length) addCommentRow();
+    });
+
+    var foot = el("div", "s5-form-foot");
+    var submit = el("button", "btn btn-primary btn-sm", "签名确认审核");
+    submit.type = "button";
+    var msg = el("span", "s5-inline-msg", "");
+    foot.appendChild(submit);
+    foot.appendChild(msg);
+    form.appendChild(foot);
+    host.appendChild(form);
+
+    submit.addEventListener("click", function () {
+      var name = String(reviewer.value || "").trim();
+      if (!name) {
+        msg.textContent = "必须填写审核人（签名）。";
+        msg.className = "s5-inline-msg error";
+        return;
+      }
+      var choice = selectedDecision();
+      var payloadComments = [];
+      if (choice === "reject") {
+        comments.forEach(function (item) {
+          var raw = String(item.raw || "").trim();
+          if (!raw) return;
+          payloadComments.push({
+            raw: raw, category: item.category || "wording",
+            where: String(item.where || "").trim(),
+            expect: String(item.expect || "").trim()
+          });
+        });
+        if (!payloadComments.length) {
+          msg.textContent = "退回必须至少写一条具体意见。";
+          msg.className = "s5-inline-msg error";
+          return;
+        }
+        if (!window.confirm("确认退回修改？意见会按类别归到 S3 或 S5。")) return;
+      } else if (!window.confirm("确认签名并通过审核？签名与结论会写进审核记录，正文不再修改。")) {
+        return;
+      }
+      try { localStorage.setItem("s5_reviewer", name); } catch (e) {}
+      submit.disabled = true;
+      msg.textContent = "提交中…";
+      msg.className = "s5-inline-msg";
+      fetch("/api/s5/" + encodeURIComponent(runId) + "/decision", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          reviewer: name, signature: name, decision: choice, comments: payloadComments
+        })
+      })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          if (!data.ok) throw new Error(data.message || data.error || "提交失败");
+          setPipelineStage("s5", {
+            state: data.state || "已通过", run: runId, ok: true
+          });
+          openS5Detail(runId);
+        })
+        .catch(function (err) {
+          submit.disabled = false;
+          msg.textContent = err.message || String(err);
+          msg.className = "s5-inline-msg error";
+        });
+    });
+  }
+
+  function renderS5Review(runId, data, host) {
+    host.textContent = "";
+    var status = data.status || {};
+    var record = data.record || {};
+    var materials = data.materials || {};
+    var state = String(status.state || record.state || "");
+    var qcInfo = materials.qc || {};
+    var qcPayload = qcInfo.payload || data.qc || {};
+    var qcFailed = String(qcPayload.verdict || "") === "FAIL"
+      && qcInfo.available !== false;
+    var showQcFailure = qcFailed && ["", "可扩写", "已生成"].indexOf(state) >= 0;
+    var shownState = showQcFailure ? "质检未通过" : state;
+    host.appendChild(el("h4", "", "审核"));
+
+    var bar = el("div", "s5-review-state");
+    bar.appendChild(el("span", "s5-review-badge "
+      + (showQcFailure ? "stop" : s5ReviewTone(state)),
+      shownState || "未送审"));
+    var message = showQcFailure
+      ? ("自动质检 " + (qcPayload.summary || qcInfo.summary || "未通过")
+         + "；未送审，签名入口不会出现。先按下方 AI 复核意见修改，"
+         + "质检通过后才会进入待审核。")
+      : (status.note || s5ReviewMessage(state));
+    bar.appendChild(el("span", "s5-review-msg", message));
+    host.appendChild(bar);
+    if (showQcFailure) {
+      host.appendChild(el("p", "s5-inline-note",
+        "质检未通过 → 未送审 → 没有签名。签名只在状态变为「待审核」后出现；"
+        + "回到聊天，让助手按质检意见定点修改即可，不必重跑扩写。"));
+    }
+
+    var meta = [];
+    if (record.reviewer) meta.push("审核人：" + record.reviewer);
+    if (record.signature) meta.push("签名：" + record.signature);
+    if (record.at) meta.push("时间：" + record.at);
+    if (meta.length) host.appendChild(el("p", "s5-review-meta", meta.join("　·　")));
+
+    var previous = materials.previous_review;
+    if (previous && (previous.comments || []).length) {
+      host.appendChild(el("p", "s5-inline-note", "上一轮审核意见"));
+      s5AppendComments(host, previous.comments);
+    }
+
+    var sections = materials.sections || [];
+    var unconfirmed = materials.unconfirmed || [];
+    if (sections.length || unconfirmed.length) {
+      var box = el("details", "s5-review-materials");
+      box.appendChild(el("summary", "", "送审材料：章节首句 "
+        + sections.length + " 条 · 未确认 " + unconfirmed.length + " 条"));
+      var inner = el("div", "s5-material-body");
+      if (sections.length) {
+        var list = el("ul", "s5-material-list");
+        sections.slice(0, 10).forEach(function (item) {
+          var li = el("li", "");
+          li.appendChild(el("b", "", String(item.heading || "正文")));
+          li.appendChild(document.createTextNode("　" + String(item.first || "")));
+          list.appendChild(li);
+        });
+        inner.appendChild(list);
+      }
+      if (unconfirmed.length) {
+        inner.appendChild(el("p", "s5-inline-note", "未确认事项"));
+        unconfirmed.slice(0, 8).forEach(function (item) {
+          inner.appendChild(el("p", "s5-inline-note",
+            (item.id || "—") + " · " + (item.original || item.fixed || "")
+            + (item.reason ? "（" + item.reason + "）" : "")));
+        });
+      }
+      box.appendChild(inner);
+      host.appendChild(box);
+    }
+
+    if (state === "待审核" && String(record.state || "") === "待审核") {
+      s5ReviewForm(runId, record, host);
+      return;
+    }
+    if (state === "已生成") {
+      var submit = el("button", "btn btn-ghost btn-sm", "送审旧稿");
+      submit.type = "button";
+      var msg = el("span", "s5-inline-msg", "");
+      submit.addEventListener("click", function () {
+        submit.disabled = true;
+        msg.textContent = "送审中…";
+        fetch("/api/s5/" + encodeURIComponent(runId) + "/submit", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: "{}"
+        })
+          .then(function (resp) { return resp.json(); })
+          .then(function (result) {
+            if (!result.ok) throw new Error(result.message || result.error || "送审失败");
+            openS5Detail(runId);
+          })
+          .catch(function (err) {
+            submit.disabled = false;
+            msg.textContent = err.message || String(err);
+            msg.className = "s5-inline-msg error";
+          });
+      });
+      var row = el("div", "s5-form-foot");
+      row.appendChild(submit);
+      row.appendChild(msg);
+      host.appendChild(row);
+      return;
+    }
+    if (state === "已通过" || state === "已交付" || state === "退回修改") {
+      host.appendChild(el("p", "s5-inline-note",
+        "结论：" + (state === "退回修改" ? "退回修改" : "通过")
+        + "　·　签名：" + (record.signature || record.reviewer || "—")
+        + "　·　时间：" + (record.at || "—")));
+      if ((record.comments || []).length) {
+        host.appendChild(el("p", "s5-inline-note", "审核意见"));
+        s5AppendComments(host, record.comments);
+      }
+      if (state === "已通过" || state === "已交付") {
+        var link = s6LinkButton(runId,
+          state === "已交付" ? "查看交付包" : "去第六步生成交付包");
+        host.appendChild(link);
+      }
+    }
+  }
+
+  function s5ReviewButton(runId, state, reviewHost) {
     if (state === "已通过") return s6LinkButton(runId, "去第六步生成交付包");
     if (state === "已交付") return s6LinkButton(runId, "查看交付包");
-    var btn = el("button", "btn btn-ghost btn-sm", state === "待审核" ? "签名确认审核" : "去审核");
+    if (state === "可扩写" || state === "退回修改") return null;
+    var btn = el("button", "btn btn-ghost btn-sm",
+      state === "待审核" ? "签名确认审核" : (state === "已生成" ? "送审并审核" : "去审核"));
     btn.type = "button";
-    btn.title = "在 S5 页面签名确认审核";
+    btn.title = "在聊天里完成审核";
     btn.addEventListener("click", function () {
-      window.open("/s5.html?run=" + encodeURIComponent(runId), "_blank");
+      if (state === "已生成") {
+        btn.disabled = true;
+        btn.textContent = "送审中…";
+        fetch("/api/s5/" + encodeURIComponent(runId) + "/submit", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: "{}"
+        })
+          .then(function (resp) { return resp.json(); })
+          .then(function (data) {
+            if (!data.ok) throw new Error(data.message || data.error || "送审失败");
+            openS5Detail(runId);
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = "送审并审核";
+            appendMessage("error", "送审失败：" + (err.message || err));
+          });
+        return;
+      }
+      if (reviewHost) {
+        reviewHost.scrollIntoView({behavior: "smooth", block: "center"});
+        var input = reviewHost.querySelector("input[type=text]");
+        if (input) input.focus({preventScroll: true});
+      }
     });
     return btn;
   }
 
   function s6LinkButton(runId, label) {
-    var link = el("a", "btn btn-ghost btn-sm", label);
-    link.href = "/s6.html?run=" + encodeURIComponent(runId);
-    link.target = "_blank";
-    link.rel = "noopener";
-    return link;
+    var btn = el("button", "btn btn-ghost btn-sm", label);
+    btn.type = "button";
+    btn.addEventListener("click", function () { openS6Detail(runId); });
+    return btn;
+  }
+
+  function s6FmtBytes(value) {
+    var size = Number(value || 0);
+    if (size < 1024) return size + " B";
+    if (size < 1024 * 1024) return (size / 1024).toFixed(1) + " KB";
+    return (size / 1024 / 1024).toFixed(1) + " MB";
+  }
+
+  function s6DownloadFile(url, name, btn) {
+    if (!url) return;
+    var label = btn.textContent;
+    btn.textContent = "下载中…";
+    btn.disabled = true;
+    fetch(url)
+      .then(function (resp) {
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.blob();
+      })
+      .then(function (blob) {
+        var href = URL.createObjectURL(blob);
+        var link = document.createElement("a");
+        link.href = href;
+        link.download = String(name || "download").split("/").pop();
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
+        btn.textContent = label;
+        btn.disabled = false;
+      })
+      .catch(function (err) {
+        btn.textContent = "下载失败";
+        btn.title = err.message || String(err);
+        setTimeout(function () {
+          btn.textContent = label;
+          btn.disabled = false;
+        }, 2000);
+      });
+  }
+
+  function s6Deliver(runId, btn, msg) {
+    if (!window.confirm("现在生成交付包？会按当前内容出版本，同内容不会重复生成。")) return;
+    btn.disabled = true;
+    var label = btn.textContent;
+    btn.textContent = "生成中…";
+    msg.textContent = "正在排版、生成 Word 并打包…";
+    msg.className = "s6-inline-msg";
+    fetch("/api/s6/" + encodeURIComponent(runId) + "/deliver", {method: "POST"})
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data.ok) throw new Error(data.message || data.error || "交付失败");
+        setPipelineStage("s6", {state: data.state || "已交付", run: runId, ok: true});
+        return fetch("/api/s6/" + encodeURIComponent(runId), {cache: "no-store"})
+          .then(function (resp) { return resp.json(); })
+          .then(function (view) {
+            if (view && view.ok) renderS6Detail(view, runId);
+          });
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = label;
+        msg.textContent = err.message || String(err);
+        msg.className = "s6-inline-msg error";
+      });
+  }
+
+  function renderS6Detail(data, runId) {
+    var body = s6DetailBody;
+    body.textContent = "";
+    body.scrollTop = 0;
+    var status = data.status || {};
+    var record = data.record || {};
+    var pkg = data.delivery || {};
+    var versions = Array.isArray(pkg.versions) ? pkg.versions : [];
+    var manifest = pkg.manifest || {};
+    var files = Array.isArray(pkg.files) ? pkg.files : [];
+    var latest = versions.length ? versions[versions.length - 1] : null;
+    var state = String(status.state || "");
+    var signature = String(record.signature || record.reviewer || "");
+    var reviewed = String(record.state || "") === "已通过"
+      && String(record.decision || "") === "pass"
+      && !!String(record.reviewer || "") && !!signature;
+    var approved = state === "已通过";
+    var delivered = state === "已交付";
+
+    var bar = el("div", "detail-state " + stateTone(state));
+    bar.appendChild(el("span", "d-state-badge", state || "未出稿"));
+    bar.appendChild(el("span", "detail-state-msg",
+      status.note || (delivered ? "已交付归档；同内容重复交付返回原版本。"
+        : (approved && reviewed ? "审核已通过并签名，可以生成交付包。"
+          : "S6 只交付 S5 审核通过的稿子。"))));
+    body.appendChild(bar);
+
+    var meta = el("div", "detail-meta");
+    function addMeta(key, value) {
+      var box = el("div", "");
+      box.appendChild(el("div", "k", key));
+      box.appendChild(el("div", "v", value || "—"));
+      meta.appendChild(box);
+    }
+    addMeta("周期", data.period || data.week || "");
+    addMeta("标题", data.title || "");
+    addMeta("审核人", record.reviewer || "");
+    addMeta("审核签名", signature);
+    addMeta("审核时间", record.at || "");
+    addMeta("目录", data.dir || "");
+    body.appendChild(meta);
+
+    if ((approved && reviewed) || delivered) {
+      var form = el("div", "s6-inline");
+      form.appendChild(el("p", "detail-note", "审核签名：" + (signature || "—")));
+      var actions = el("div", "s6-actions");
+      var deliverBtn = el("button", "btn btn-primary btn-sm",
+        delivered ? "重新交付" : "生成交付包");
+      deliverBtn.type = "button";
+      var deliverMsg = el("span", "s6-inline-msg", "");
+      deliverBtn.addEventListener("click", function () {
+        s6Deliver(runId, deliverBtn, deliverMsg);
+      });
+      actions.appendChild(deliverBtn);
+      actions.appendChild(deliverMsg);
+      form.appendChild(actions);
+      body.appendChild(form);
+    } else if (state !== "已交付") {
+      var note = el("div", "s6-empty");
+      note.appendChild(document.createTextNode(
+        approved ? "审核记录缺少签名、通过结论或审核人，先回第五步补齐审核。"
+          : "当前状态：" + (state || "未知") + "；S6 只交付 S5 审核通过的稿子。"));
+      var goS5 = el("button", "btn btn-ghost btn-sm", "去第五步审核");
+      goS5.type = "button";
+      goS5.addEventListener("click", function () {
+        s6DetailDialog.close();
+        openS5Detail(runId);
+      });
+      var row = el("div", "s6-actions");
+      row.appendChild(goS5);
+      note.appendChild(row);
+      body.appendChild(note);
+    }
+
+    if (versions.length) {
+      var stats = el("div", "s2-stats");
+      [["最新版本", latest.version || "—"],
+       ["文件数", String(files.length || (manifest.files || []).length || 0)],
+       ["交付时间", latest.delivered_at || manifest.delivered_at || "—"],
+       ["审核签名", (manifest.review || {}).signature || signature || "—"]].forEach(function (pair) {
+        var card = el("div", "s2-stat");
+        card.appendChild(el("div", "k", pair[0]));
+        card.appendChild(el("div", "v", String(pair[1])));
+        stats.appendChild(card);
+      });
+      body.appendChild(stats);
+
+      if (files.length) {
+        var sec = detailSection("交付文件");
+        var list = el("div", "s6-files");
+        files.forEach(function (file) {
+          var row = el("div", "s6-file");
+          var link = el("a", "", file.name || "下载");
+          link.href = file.url || "#";
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.title = file.name || "";
+          row.appendChild(link);
+          row.appendChild(el("span", "size", s6FmtBytes(file.bytes)));
+          var download = el("button", "s6-download", "下载");
+          download.type = "button";
+          download.title = "下载 " + (file.name || "");
+          download.addEventListener("click", function () {
+            s6DownloadFile(file.url, file.name, download);
+          });
+          row.appendChild(download);
+          list.appendChild(row);
+        });
+        sec.appendChild(list);
+        body.appendChild(sec);
+      }
+
+      var versionSec = detailSection("版本");
+      var wrap = el("div", "s2-table-wrap");
+      var table = el("table", "s2-table");
+      var head = el("thead", "");
+      var headRow = el("tr", "");
+      ["版本", "交付时间", "内容指纹", "文件数"].forEach(function (text) {
+        headRow.appendChild(el("th", "", text));
+      });
+      head.appendChild(headRow);
+      var tbody = el("tbody", "");
+      versions.slice().reverse().forEach(function (item) {
+        var tr = el("tr", "");
+        tr.appendChild(el("td", "mono", item.version || "—"));
+        tr.appendChild(el("td", "", item.delivered_at || "—"));
+        tr.appendChild(el("td", "mono", String(item.content_fingerprint || "").slice(0, 12) || "—"));
+        tr.appendChild(el("td", "mono", String(item.files || 0)));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(head);
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      versionSec.appendChild(wrap);
+      body.appendChild(versionSec);
+
+      if (Object.keys(manifest).length) {
+        var manifestBox = el("details", "s6-manifest");
+        manifestBox.appendChild(el("summary", "", "交付清单（manifest.json）"));
+        manifestBox.appendChild(el("pre", "", JSON.stringify(manifest, null, 2)));
+        body.appendChild(manifestBox);
+      }
+    } else {
+      body.appendChild(el("p", "s6-empty",
+        delivered ? "已交付，但没有读到交付清单；请检查 deliver 目录。"
+          : "还没有交付包；审核通过后点「生成交付包」。")); 
+    }
+  }
+
+  function openS6Detail(runId) {
+    if (!runId) return;
+    if (s5DetailDialog.open) {
+      stopS5Polling();
+      s5DetailDialog.close();
+    }
+    s6DetailTitle.textContent = "S6 · " + String(runId).toUpperCase();
+    s6DetailBody.textContent = "正在读取…";
+    if (!s6DetailDialog.open) s6DetailDialog.showModal();
+    fetch("/api/s6/" + encodeURIComponent(runId), {cache: "no-store"})
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (!data.ok) throw new Error(data.error || "读取失败");
+        renderS6Detail(data, runId);
+      })
+      .catch(function (err) {
+        s6DetailBody.textContent = "读取失败：" + (err.message || err);
+      });
+  }
+
+  function renderS5AiReview(data, body) {
+    var materials = data.materials || {};
+    var qc = materials.qc || {};
+    var payload = qc.payload || {};
+    var ai = payload.ai_review || {};
+    var filtered = materials.filtered_discoveries || {};
+    var section = detailSection("AI 复核与自动质检");
+    section.classList.add("s5-ai-review");
+
+    var verdict = payload.verdict || qc.verdict || "—";
+    var source = payload.business_source === "ai" ? "pandasai（代码复核一致）" : "代码复核值";
+    section.appendChild(el("p", "detail-note",
+      "自动质检：" + verdict + " " + (payload.summary || qc.summary || "")
+      + "；业务取数来源：" + source));
+
+    var aiText = "AI 复核：";
+    if (!Object.keys(ai).length) {
+      aiText += "本轮无记录";
+    } else if (ai.skipped) {
+      aiText += "跳过（" + (ai.reason || "未返回结论") + "）";
+    } else {
+      aiText += ai.ok ? "通过" : "未通过";
+      if ((ai.waived || []).length) {
+        aiText += "（用户豁免 " + ai.waived.length + " 条）";
+      }
+    }
+    section.appendChild(el("p", "detail-note", aiText));
+    if ((ai.waived || []).length) {
+      section.appendChild(el("p", "s5-inline-note",
+        "用户已判定为误判、不再作为不通过理由：" + ai.waived.join("；")));
+    }
+
+    function addList(title, items) {
+      if (!items || !items.length) return;
+      section.appendChild(el("p", "detail-note", title));
+      items.forEach(function (text) {
+        section.appendChild(el("p", "s5-draft", "· " + text));
+      });
+    }
+    addList("AI 复核问题", ai.issues || []);
+    addList("AI 复核建议", ai.suggestions || []);
+
+    var queries = Array.isArray(ai.queries) ? ai.queries : [];
+    if (queries.length) {
+      section.appendChild(el("p", "detail-note",
+        "AI 调 pandasai 复核（" + queries.length + " 次）"));
+      var qTable = el("table", "s5-disc");
+      var qHead = el("thead", "");
+      var qRow = el("tr", "");
+      ["问题", "结果"].forEach(function (h) { qRow.appendChild(el("th", "", h)); });
+      qHead.appendChild(qRow);
+      qTable.appendChild(qHead);
+      var qBody = el("tbody", "");
+      queries.forEach(function (item) {
+        var req = item.request || {};
+        var res = item.result || {};
+        var result = res.ok
+          ? (res.value !== null && res.value !== undefined ? String(res.value)
+             : (res.display || (Array.isArray(res.rows) ? res.rows.length + " 行" : "—")))
+          : "失败：" + (res.error || "—");
+        var tr = el("tr", "");
+        [req.question || "—", result].forEach(function (cell) {
+          tr.appendChild(el("td", "", cell));
+        });
+        qBody.appendChild(tr);
+      });
+      qTable.appendChild(qBody);
+      section.appendChild(qTable);
+    }
+
+    var checks = Array.isArray(payload.checks) ? payload.checks : [];
+    if (checks.length) {
+      section.appendChild(el("p", "detail-note", "代码质检明细"));
+      checks.forEach(function (check) {
+        section.appendChild(el("p", "detail-note",
+          (check.ok ? "通过" : "未通过") + " · "
+          + (check.name || "") + "：" + (check.detail || "")));
+      });
+    }
+
+    var filterQ = (filtered.questions || []).length;
+    var filterF = (filtered.findings || []).length;
+    if (filterQ || filterF) {
+      section.appendChild(el("p", "detail-note",
+        "被正文过滤、已交给 AI 复核：问题 " + filterQ + " 条，发现 " + filterF + " 条"));
+    }
+    body.appendChild(section);
+  }
+
+  function renderS5Filtered(data, body) {
+    var filtered = (data.materials || {}).filtered_discoveries || {};
+    var questions = filtered.questions || [];
+    var findings = filtered.findings || [];
+    if (!questions.length && !findings.length) return;
+    var section = detailSection("被过滤的数据发现");
+    section.appendChild(el("p", "detail-note",
+      "以下内容不写进正文，只交给 AI 复核；AI 可调 pandasai 再查。"));
+    if (questions.length) {
+      var qTable = el("table", "s5-disc");
+      var qHead = el("thead", "");
+      var qRow = el("tr", "");
+      ["编号", "被过滤的问题", "原因"].forEach(function (h) {
+        qRow.appendChild(el("th", "", h));
+      });
+      qHead.appendChild(qRow);
+      qTable.appendChild(qHead);
+      var qBody = el("tbody", "");
+      questions.forEach(function (item) {
+        var tr = el("tr", "");
+        [item.id || "—", item.question || "—", item.reason || "—"].forEach(function (cell) {
+          tr.appendChild(el("td", "", cell));
+        });
+        qBody.appendChild(tr);
+      });
+      qTable.appendChild(qBody);
+      section.appendChild(qTable);
+    }
+    if (findings.length) {
+      var fTable = el("table", "s5-disc");
+      var fHead = el("thead", "");
+      var fRow = el("tr", "");
+      ["编号", "被过滤的发现", "结果"].forEach(function (h) {
+        fRow.appendChild(el("th", "", h));
+      });
+      fHead.appendChild(fRow);
+      fTable.appendChild(fHead);
+      var fBody = el("tbody", "");
+      findings.forEach(function (item) {
+        var tr = el("tr", "");
+        [item.id || "—", item.question || "—", item.display || item.value || "—"]
+          .forEach(function (cell) { tr.appendChild(el("td", "", cell)); });
+        fBody.appendChild(tr);
+      });
+      fTable.appendChild(fBody);
+      section.appendChild(fTable);
+    }
+    body.appendChild(section);
   }
 
   function renderS5Detail(data, runId) {
@@ -2324,6 +3300,11 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       grid.appendChild(box);
     });
     body.appendChild(grid);
+
+    var reviewHost = el("section", "s5-inline s5-review");
+    body.appendChild(reviewHost);
+    renderS5Review(runId, data, reviewHost);
+    renderS5AiReview(data, body);
 
     var skels = s5SkeletonTexts(data.skeleton || []);
     var draftSec = detailSection("正文");
@@ -2396,6 +3377,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       discSec.appendChild(dt);
       body.appendChild(discSec);
     }
+    renderS5Filtered(data, body);
 
     var figures = s5FigureList(data, runId);
     if (figures.length) {
@@ -2464,8 +3446,34 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     loadS5History(runId, histBody);
 
     var state = String(status.state || data.state || "");
-    s5DetailFoot.appendChild(s5EditQuestionsButton(runId));
-    if (state) s5DetailFoot.appendChild(s5ReviewButton(runId, state));
+    var qcInfo = (data.materials && data.materials.qc) || {};
+    var qcPayload = qcInfo.payload || data.qc || {};
+    var qcFailed = String(qcPayload.verdict || "") === "FAIL"
+      && qcInfo.available !== false;
+    if (qcFailed) {
+      var viewBtn = el("button", "btn btn-ghost btn-sm", "查看质检问题");
+      viewBtn.type = "button";
+      viewBtn.addEventListener("click", function () {
+        var sec = body.querySelector(".s5-ai-review");
+        if (sec) sec.scrollIntoView({behavior: "smooth", block: "center"});
+      });
+      s5DetailFoot.appendChild(viewBtn);
+      var fixBtn = el("button", "btn btn-primary btn-sm", "让助手按意见修改");
+      fixBtn.type = "button";
+      fixBtn.addEventListener("click", function () {
+        s5DetailDialog.close();
+        input.value = "按 S5 质检意见修改当前稿，先别重跑扩写";
+        input.dispatchEvent(new Event("input", {bubbles: true}));
+        input.focus();
+      });
+      s5DetailFoot.appendChild(fixBtn);
+      s5DetailFoot.hidden = false;
+      return;
+    }
+    if (state) {
+      var reviewBtn = s5ReviewButton(runId, state, reviewHost);
+      if (reviewBtn) s5DetailFoot.appendChild(reviewBtn);
+    }
     var canWrite = !state || ["可扩写", "已生成", "待审核", "退回修改"].indexOf(state) >= 0;
     var btn = el("button", "btn btn-primary btn-sm", canWrite ? "重新扩写" : "已通过审核");
     btn.type = "button";
@@ -2488,7 +3496,6 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     s5DetailFoot.textContent = "";
     s5DetailFoot.appendChild(el("span", "detail-foot-hint",
       "需要模型写作；S4 状态须为可扩写。"));
-    s5DetailFoot.appendChild(s5EditQuestionsButton(runId));
     var btn = el("button", "btn btn-primary btn-sm", "开始扩写");
     btn.type = "button";
     btn.addEventListener("click", function () { runS5(runId, btn); });
@@ -2508,8 +3515,15 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
           return;
         }
         if (!data.ok || !data.draft) return;
-        var state = String((data.status || {}).state || "待审核");
-        pipeline.s5 = { state: state, run: runId, ok: true };
+        var statusState = String((data.status || {}).state || "待审核");
+        var matsQc = (data.materials && data.materials.qc) || {};
+        var qcPayload = matsQc.payload || data.qc || {};
+        var qcFailed = String(qcPayload.verdict || "") === "FAIL"
+          && matsQc.available !== false;
+        var state = (qcFailed && ["可扩写", "已生成"].indexOf(statusState) >= 0)
+          ? "质检未通过" : statusState;
+        pipeline.s5 = { state: state, run: runId,
+          ok: state === "已通过" || state === "已交付" };
         if (state === "已交付") {
           pipeline.s6 = { state: "已交付", run: runId, ok: true };
         }
@@ -2580,7 +3594,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       var resp = await fetch("/api/s5", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_id: runId })
+        body: JSON.stringify({ run_id: runId, full: true })
       });
       var data = await resp.json();
       if (!data.ok) throw new Error(data.message || data.error || "扩写失败");
@@ -2650,7 +3664,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
         run: tag,
         ok: true
       });
-      renderRunDetail(data.intake || {}, data.status || {});
+      renderRunDetail(data.intake || {});
       if (data.note) appendMessage("assistant", data.note);
     } catch (err) {
       var label = (btn.classList.contains("pipeline-override") || btn.classList.contains("event-override")) ? "放权" : "人工放权";
@@ -2706,6 +3720,105 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     host.appendChild(bar);
   }
 
+  function ensureToolTimer(target) {
+    if (target.toolTimer) return;
+    target.toolTimer = setInterval(function () {
+      var rows = target.toolList ? target.toolList.querySelectorAll(".tool-row.running") : [];
+      if (!rows.length) {
+        clearInterval(target.toolTimer);
+        target.toolTimer = null;
+        return;
+      }
+      Array.prototype.forEach.call(rows, function (row) {
+        var started = Number(row.getAttribute("data-start") || 0);
+        var time = row.querySelector(".tool-time");
+        if (time && started) time.textContent = ((Date.now() - started) / 1000).toFixed(1) + "s";
+      });
+    }, 100);
+  }
+
+  function startToolRow(target, ev) {
+    if (!target.toolList) return;
+    target.toolList.hidden = false;
+    var callId = ev.call_id || "";
+    var row = el("div", "tool-row running");
+    row.setAttribute("data-call", callId);
+    row.setAttribute("data-tool", ev.tool || "");
+    row.setAttribute("data-start", String(Date.now()));
+    row.appendChild(el("span", "tool-spinner"));
+    row.appendChild(el("span", "tool-name", TOOL_LABELS[ev.tool] || ev.tool || "工具"));
+    var hint = toolHint(ev.tool, ev.args);
+    if (hint) row.appendChild(el("span", "tool-hint", hint));
+    row.appendChild(el("span", "tool-time", "0.0s"));
+    target.toolList.appendChild(row);
+    ensureToolTimer(target);
+    if (isNearBottom()) scrollToBottom();
+  }
+
+  function finishToolRow(target, ev) {
+    if (!target.toolList) return;
+    var rows = target.toolList.querySelectorAll(".tool-row.running");
+    var row = null;
+    Array.prototype.forEach.call(rows, function (item) {
+      if (row) return;
+      if (ev.call_id && item.getAttribute("data-call") === ev.call_id) row = item;
+    });
+    if (!row) {
+      Array.prototype.forEach.call(rows, function (item) {
+        if (!row && item.getAttribute("data-tool") === (ev.tool || "")) row = item;
+      });
+    }
+    if (!row && rows.length) row = rows[rows.length - 1];
+    if (!row) {
+      startToolRow(target, {tool: ev.tool, args: {}, call_id: ev.call_id});
+      row = target.toolList.lastElementChild;
+    }
+    row.classList.remove("running");
+    row.classList.add(ev.ok ? "done" : "error");
+    var spinner = row.querySelector(".tool-spinner");
+    if (spinner) spinner.remove();
+    row.insertBefore(el("span", "tool-mark", ev.ok ? "✓" : "!"), row.firstChild);
+    var time = row.querySelector(".tool-time");
+    if (time && ev.elapsed_ms) time.textContent = (ev.elapsed_ms / 1000).toFixed(1) + "s";
+    if (!ev.ok && ev.error) {
+      var hint = row.querySelector(".tool-hint");
+      if (hint) hint.textContent = ev.error;
+      else row.appendChild(el("span", "tool-hint", ev.error));
+    }
+    row.title = [ev.tool, ev.run_id, ev.state, ev.error].filter(Boolean).join(" · ");
+    if (!target.toolList.querySelector(".tool-row.running")) {
+      if (target.toolTimer) {
+        clearInterval(target.toolTimer);
+        target.toolTimer = null;
+      }
+      if (target.thinkingLabel) target.thinkingLabel.textContent = "正在整理结果…";
+      if (sendLabel && pendingStreamIdle(target)) sendLabel.textContent = "整理中";
+    }
+    if (isNearBottom()) scrollToBottom();
+  }
+
+  function pendingStreamIdle(target) {
+    return !target.streamContent || target.streamContent.hidden;
+  }
+
+  function settleToolRows(target) {
+    if (!target.toolList) return;
+    var rows = target.toolList.querySelectorAll(".tool-row.running");
+    Array.prototype.forEach.call(rows, function (row) {
+      row.classList.remove("running");
+      row.classList.add("done");
+      var spinner = row.querySelector(".tool-spinner");
+      if (spinner) spinner.remove();
+      if (!row.querySelector(".tool-mark")) {
+        row.insertBefore(el("span", "tool-mark", "✓"), row.firstChild);
+      }
+    });
+    if (target.toolTimer) {
+      clearInterval(target.toolTimer);
+      target.toolTimer = null;
+    }
+  }
+
   function appendProgress() {
     var stick = !messages.querySelector(".msg") || isNearBottom();
     removeWelcome();
@@ -2724,12 +3837,16 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     dots.appendChild(el("i"));
     dots.appendChild(el("i"));
     thinkingHead.appendChild(dots);
-    thinkingHead.appendChild(el("span", "", "正在思考…"));
+    var thinkingLabel = el("span", "", "正在思考…");
+    thinkingHead.appendChild(thinkingLabel);
     thinking.appendChild(thinkingHead);
     var thinkingText = el("div", "thinking-text");
     thinkingText.hidden = true;
     thinking.appendChild(thinkingText);
     body.appendChild(thinking);
+    var toolList = el("div", "tool-activity");
+    toolList.hidden = true;
+    body.appendChild(toolList);
     var streamContent = el("div", "msg-content stream-content");
     streamContent.hidden = true;
     body.appendChild(streamContent);
@@ -2754,7 +3871,8 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     if (stick) scrollToBottom();
     return {
       wrap: msg, trace: trace, title: title, meta: meta, list: list, detail: detail,
-      thinking: thinking, thinkingText: thinkingText, streamContent: streamContent,
+      thinking: thinking, thinkingLabel: thinkingLabel, thinkingText: thinkingText,
+      toolList: toolList, toolTimer: null, streamContent: streamContent,
       finished: false
     };
   }
@@ -2769,6 +3887,7 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       if (!target.thinkingText.textContent) target.thinking.hidden = true;
     }
     target.list.textContent = "";
+    var detailInlined = false;
     (data.steps || []).forEach(function (name, index) {
       var state = states[index] || "pending";
       if (state === "pending") return;
@@ -2776,24 +3895,32 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       var dot = el("span", "dot");
       if (state === "done") dot.innerHTML = CHECK;
       item.appendChild(dot);
-      item.appendChild(el("span", "name", name));
+      var stepBody = el("span", "step-body");
+      stepBody.appendChild(el("span", "name", name));
+      if (state === "active" && !data.finished && data.detail) {
+        stepBody.appendChild(el("span", "step-detail", data.detail));
+        detailInlined = true;
+      }
+      item.appendChild(stepBody);
       target.list.appendChild(item);
     });
     if (data.finished) {
       target.meta.textContent = "已完成";
       target.trace.classList.add("done");
       target.detail.hidden = true;
+      target.detail.textContent = "";
       if (!target.finished) {
         target.finished = true;
         target.trace.open = false;
       }
     } else if (data.started) {
       target.meta.textContent = "进行中 · " + Math.min((data.current || 0) + 1, total) + "/" + total;
-      target.detail.hidden = false;
-      target.detail.textContent = data.detail || "进行中…";
+      target.detail.hidden = detailInlined;
+      target.detail.textContent = detailInlined ? "" : (data.detail || "进行中…");
     } else {
       target.meta.textContent = "准备中…";
       target.detail.hidden = true;
+      target.detail.textContent = "";
     }
     if (isNearBottom()) scrollToBottom();
   }
@@ -2831,11 +3958,13 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
     sessionId = data.session_id;
     loadPipeline();
     renderPipeline();
-    var syncRun = (pipeline.s4 && pipeline.s4.run) || (pipeline.s3 && pipeline.s3.run) || "";
-    if (syncRun) {
+    var syncRun = data.run_id || (pipeline.s5 && pipeline.s5.run)
+      || (pipeline.s4 && pipeline.s4.run) || (pipeline.s3 && pipeline.s3.run) || "";
+    syncPipelineFromServer(syncRun).then(function () {
+      if (!syncRun) return;
       syncS4FromServer(syncRun);
       syncS5FromServer(syncRun);
-    }
+    });
     boundNames = data.files || [];
     setBound(boundNames.length
       ? "本次会话已绑定：" + boundNames.join("、")
@@ -3028,6 +4157,10 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
   s5DetailDialog.addEventListener("click", function (event) {
     if (event.target === s5DetailDialog) s5DetailDialog.close();
   });
+  s6DetailClose.addEventListener("click", function () { s6DetailDialog.close(); });
+  s6DetailDialog.addEventListener("click", function (event) {
+    if (event.target === s6DetailDialog) s6DetailDialog.close();
+  });
 
   function setBusy(busy) {
     sendBtn.disabled = busy;
@@ -3061,11 +4194,22 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
         pending.streamContent.textContent += content;
         if (sendLabel && sendLabel.textContent === "思考中") sendLabel.textContent = "输出中";
         if (isNearBottom()) scrollToBottom();
+      } else if (event.type === "tool_start") {
+        pending.thinking.hidden = false;
+        if (pending.thinkingLabel) pending.thinkingLabel.textContent = "正在调用工具…";
+        startToolRow(pending, event);
+        if (sendLabel) sendLabel.textContent = "执行中";
+      } else if (event.type === "tool_end") {
+        finishToolRow(pending, event);
       } else if (event.type === "content_reset") {
         pending.streamContent.textContent = "";
         pending.streamContent.hidden = true;
-        if (sendLabel) sendLabel.textContent = "思考中";
+        if (sendLabel) {
+          sendLabel.textContent = pending.toolList
+            && pending.toolList.querySelector(".tool-row.running") ? "执行中" : "思考中";
+        }
       } else if (event.type === "done") {
+        settleToolRows(pending);
         finalData = event;
       } else if (event.type === "error") {
         failure = new Error(event.error || "助手调用失败");
@@ -3134,6 +4278,10 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
       }
       var finalData = await consumeStream(resp, pending);
       if (timer) clearInterval(timer);
+      if (pending.toolTimer) {
+        clearInterval(pending.toolTimer);
+        pending.toolTimer = null;
+      }
       await pollProgress(pending);
 
       var usedS1 = (finalData.events || []).some(function (e) { return e.tool === "run_s1"; });
@@ -3160,9 +4308,11 @@ tr.disc-row.open .disc-caret{transform:rotate(90deg)}
         pending.trace.remove();
       }
       updatePipelineFromEvents(finalData.events);
+      if (finalData.run_id) syncPipelineFromServer(finalData.run_id);
       if (isNearBottom()) scrollToBottom();
     } catch (err) {
       if (timer) clearInterval(timer);
+      if (pending.toolTimer) clearInterval(pending.toolTimer);
       pending.wrap.remove();
       appendMessage("error", err.message || String(err));
     } finally {

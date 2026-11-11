@@ -172,15 +172,42 @@ def test_plan_layout_with_stub_ai():
                             summary="本周销售回落。", tables=[_table()])
     assert result["source"] == "ai"
     assert result["errors"] == []
-    assert [item["number"] for item in result["plan"]["figures"]] == [4, 7]
+    assert [item["number"] for item in result["plan"]["figures"]] == [1, 2]
     assert result["pages_estimate"] > 0
     md = result["markdown"]
     assert "## 渠道与区域" in md
-    assert md.index("![图 4") < md.index("![图 7")
+    assert md.index("![图 1") < md.index("![图 2")
     assert "见图 1" not in md
     assert "见图 图" not in md
     cleaned = sl.clean_sections(sections, {4, 7})
-    assert sl.validate_markdown(md, cleaned, figures,
+    assert sl.validate_markdown(md, cleaned, result["figures"],
+                                result["plan"]["figures"]) == []
+
+
+def test_figures_are_renumbered_in_document_order():
+    sections = [{"heading": "经营情况", "blocks": [
+        {"type": "p", "text": "销售数量中拿铁居首，柠檬茶居末。"},
+        {"type": "p", "text": "折扣金额中拿铁最高，鲜牛奶最低。"},
+    ]}]
+    figures = [
+        {"number": 1, "caption": "图 1　折扣金额合计：拿铁最高，鲜牛奶最低（2026-10-12 至 2026-10-18）",
+         "path": "figures/fig01.png", "shape": "bar"},
+        {"number": 2, "caption": "图 2　销售数量合计：拿铁最高，柠檬茶最低（2026-10-12 至 2026-10-18）",
+         "path": "figures/fig02.png", "shape": "bar"},
+    ]
+    ai = {"figures": [{"number": 1, "width": "wide"},
+                      {"number": 2, "width": "wide"}]}
+
+    def chat_fn(*args, **kwargs):
+        return {"text": json.dumps(ai, ensure_ascii=False)}
+
+    result = sl.plan_layout(sections, figures, _meta(), use_ai=True, chat_fn=chat_fn)
+    md = result["markdown"]
+    assert md.index("![图 1") < md.index("![图 2")
+    assert "图 1　销售数量" in md
+    assert "图 2　折扣金额" in md
+    assert [item["number"] for item in result["plan"]["figures"]] == [1, 2]
+    assert sl.validate_markdown(md, sections, result["figures"],
                                 result["plan"]["figures"]) == []
 
 

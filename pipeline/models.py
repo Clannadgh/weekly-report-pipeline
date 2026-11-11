@@ -272,6 +272,7 @@ class ReconcileStats(BaseModel):
     calls: int = 0
     ok: int = 0
     parse_failed: int = 0
+    waived: int = 0
 
 
 class IssuesResult(BaseModel):
@@ -281,6 +282,7 @@ class IssuesResult(BaseModel):
     results: list[ResultItem] = Field(default_factory=list)
     stats: ReconcileStats = Field(default_factory=ReconcileStats)
     coverage: list[dict] = Field(default_factory=list)
+    waived: list[dict] = Field(default_factory=list)
     message: str = ""
     state: str = "ok"
 

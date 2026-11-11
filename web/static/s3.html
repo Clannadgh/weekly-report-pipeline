@@ -366,6 +366,8 @@
   .tag.warn{background:var(--warn-bg);color:var(--warn);border:1px solid #f0dca4}
   .tag.info{background:#eef1f4;color:#3d4854;border:1px solid #dcdfe5}
 </style>
+<link rel="stylesheet" href="/static/model-settings.css">
+<script src="/static/model-settings.js" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -839,7 +841,7 @@
       } else {
         document.getElementById("engineDot").className = "dot bad";
         document.getElementById("engineNote").textContent =
-          "未找到 GLM_API_KEY，S3 无法取数；请先配置后再跑。";
+          "未配置模型，S3 无法取数；请先点顶栏「模型」配置后再跑。";
       }
     })
     .catch(function () {});

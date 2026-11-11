@@ -1,6 +1,7 @@
-"""智谱 GLM 的极简客户端（OpenAI 兼容协议，只用标准库）。
+"""OpenAI 兼容接口的极简客户端（只用标准库）。
 
-密钥从环境变量或项目根目录的 .env 读取，代码里不出现任何密钥。
+默认连智谱 GLM。模型配置优先读 config/models.json 里当前启用的供应商，
+没有配置文件时回退到环境变量 / 项目根目录 .env 的 GLM_*。代码里不出现任何密钥。
 
     from pipeline.llm import chat, ping
 
@@ -15,11 +16,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+from . import model_config
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
@@ -59,9 +63,19 @@ def load_env(path: Path | None = None) -> None:
 
 def get_config() -> LLMConfig:
     load_env()
+    try:
+        provider = model_config.active_provider()
+    except model_config.ModelConfigError as exc:
+        raise LLMError(str(exc)) from None
+    if provider:
+        return LLMConfig(
+            api_key=provider["api_key"],
+            base_url=provider["base_url"],
+            model=provider["model"],
+        )
     key = os.environ.get("GLM_API_KEY", "").strip()
     if not key:
-        raise LLMError("未配置 GLM_API_KEY：请在项目根目录的 .env 里填写，或设置同名环境变量")
+        raise LLMError("未配置模型：点页面顶栏「模型」添加供应商，或在 .env 里填写 GLM_API_KEY")
     return LLMConfig(
         api_key=key,
         base_url=os.environ.get("GLM_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
@@ -116,9 +130,10 @@ def chat(
     tools: list[dict] | None = None,
     tool_choice: str | dict | None = None,
     thinking: str | None = None,
+    config: LLMConfig | None = None,
 ) -> dict:
     """返回 {text, message, tool_calls, model, usage, elapsed_ms, finish_reason}。"""
-    cfg = get_config()
+    cfg = config or get_config()
     payload: dict = {
         "model": model or cfg.model,
         "messages": messages,
@@ -172,6 +187,7 @@ def chat_stream(
     tools: list[dict] | None = None,
     tool_choice: str | dict | None = None,
     thinking: str | None = None,
+    config: LLMConfig | None = None,
 ):
     """流式聊天：先逐段 yield reasoning/content，最后 yield 一条 final。
 
@@ -183,7 +199,7 @@ def chat_stream(
             else:
                 ... # reasoning / content
     """
-    cfg = get_config()
+    cfg = config or get_config()
     payload: dict = {
         "model": model or cfg.model,
         "messages": messages,
@@ -315,17 +331,85 @@ def chat_stream(
     }
 
 
-def ping() -> dict:
+def ping(config: LLMConfig | None = None) -> dict:
     """连通性自检：短问题、短回答。"""
-    cfg = get_config()
     out = chat(
         [{"role": "user", "content": "只回复两个字：可用"}],
         temperature=0.0,
         max_tokens=256,
+        config=config,
     )
-    return {"ok": bool(out["text"]), "model": out["model"], "reply": out["text"],
+    reply = out["text"] or out["reasoning"]
+    return {"ok": bool(reply), "model": out["model"], "reply": reply[:200],
             "finish_reason": out["finish_reason"],
             "elapsed_ms": out["elapsed_ms"], "usage": out["usage"]}
+
+
+def _models_url_candidates(base_url: str) -> list[str]:
+    base = str(base_url or "").strip().rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[:-len("/chat/completions")].rstrip("/")
+    urls = [base + "/models"]
+    if not re.search(r"/v\d+[a-z]*$", base):
+        urls.append(base + "/v1/models")
+    return list(dict.fromkeys(urls))
+
+
+def _extract_models(data: dict) -> list[dict]:
+    found: dict[str, dict] = {}
+
+    def add(model_id, owned_by=None) -> None:
+        model_id = str(model_id or "").strip()
+        if model_id and model_id not in found:
+            found[model_id] = {"id": model_id, "owned_by": owned_by}
+
+    rows = data.get("data")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                add(row.get("id") or row.get("name"), row.get("owned_by"))
+    rows = data.get("models")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                add(row.get("id") or row.get("slug") or row.get("name"), row.get("owned_by"))
+            else:
+                add(row)
+    return list(found.values())
+
+
+def list_models(base_url: str, api_key: str, timeout: int = 20) -> list[dict]:
+    """GET /models（OpenAI 兼容），兼容 data[] 与 models[] 两种返回。"""
+    errors: list[str] = []
+    for url in _models_url_candidates(base_url):
+        req = urllib.request.Request(
+            url,
+            method="GET",
+            headers={"Authorization": "Bearer " + api_key, "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:200].strip()
+            errors.append(f"{url} → HTTP {exc.code}" + (f"：{detail}" if detail else ""))
+            continue
+        except urllib.error.URLError as exc:
+            errors.append(f"{url} → 连不上：{exc.reason}")
+            continue
+        except TimeoutError:
+            errors.append(f"{url} → 超时（{timeout}s）")
+            continue
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            errors.append(f"{url} → 返回不是 JSON")
+            continue
+        models = _extract_models(data if isinstance(data, dict) else {})
+        if models:
+            return models
+        errors.append(f"{url} → 返回里没有模型列表")
+    raise LLMError("获取模型列表失败：" + "；".join(errors))
 
 
 if __name__ == "__main__":
